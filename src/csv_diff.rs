@@ -83,36 +83,37 @@ impl CsvDiff {
         let csv_reader_right = csv::Reader::from_reader(csv_right);
 
         let csv_records_left = csv_reader_left.into_byte_records();
-        let mut csv_records_right_enumerate = csv_reader_right.into_byte_records().enumerate();
+        let mut csv_records_right = csv_reader_right.into_byte_records();
 
         let mut csv_records_right_map: ByteRecordMap =
-            csv_records_right_enumerate.try_fold::<_, _, csv::Result<ByteRecordMap>>(
-                    ByteRecordMap::new(&self.primary_key_columns), |mut acc, (row, curr_byte_record_res)| {
+            csv_records_right.try_fold::<_, _, csv::Result<ByteRecordMap>>(
+                    ByteRecordMap::new(&self.primary_key_columns), |mut acc, curr_byte_record_res| {
                         let byte_record = curr_byte_record_res?;
-                        acc.insert(byte_record, row);
+                        acc.insert(byte_record);
                         Ok(acc)
             })?;
         
         let mut diff_records = Vec::new();
-        for (line_left, byte_record_left_res) in csv_records_left.enumerate() {
+        for byte_record_left_res in csv_records_left {
             let byte_record_left = byte_record_left_res?;
             let csv_row_key = CsvRowKey::from(KeyByteRecord {
                 key_idx: &self.primary_key_columns,
                 byte_record: &byte_record_left
             });
-            if let Some((line_right, byte_record_right)) = csv_records_right_map.remove(&csv_row_key) {
+            if let Some(byte_record_right) = csv_records_right_map.remove(&csv_row_key) {
                 // we have a modification in our csv line or they are equal
             } else {
                 // record has been deleted as it can't be found in csv on the right
-                let line_left = byte_record_left.position().unwrap().line();
+                let line_left = byte_record_left.position().expect("No line info given.").line();
                 diff_records.push(DiffRow::Deleted(RecordLineInfo::new(byte_record_left, line_left)));
             }
         }
-        // every record that has been added (which is in the right csv, but not in the left)
+        
         diff_records
+            // extend with every record that has been added (which is in the right csv, but not in the left)
             .extend(csv_records_right_map.map.into_iter()
-                .map(|(_, (line, byte_record))| {
-                    let line = byte_record.position().unwrap().line();
+                .map(|(_, byte_record)| {
+                    let line = byte_record.position().expect("No line info given.").line();
                     DiffRow::Added(RecordLineInfo::new(byte_record, line))
                 }));
         Ok(if diff_records.is_empty() {
@@ -125,7 +126,7 @@ impl CsvDiff {
 
 struct ByteRecordMap<'a> {
     key_idx: &'a HashSet<usize>,
-    map: HashMap<CsvRowKey, (usize, csv::ByteRecord)>,
+    map: HashMap<CsvRowKey, csv::ByteRecord>,
 }
 
 impl<'a> ByteRecordMap<'a> {
@@ -137,7 +138,7 @@ impl<'a> ByteRecordMap<'a> {
         }
     }
 
-    pub fn insert(&mut self, byte_record: csv::ByteRecord, row: usize) {
+    pub fn insert(&mut self, byte_record: csv::ByteRecord) {
         let mut row_key = Vec::new();
         for idx in self.key_idx.iter() {
             if let Some(field) = byte_record.get(*idx) {
@@ -146,10 +147,10 @@ impl<'a> ByteRecordMap<'a> {
             }
         }
         
-        self.map.insert(CsvRowKey::from(row_key), (row, byte_record));
+        self.map.insert(CsvRowKey::from(row_key), byte_record);
     }
 
-    pub fn remove(&mut self, csv_row_key: &CsvRowKey) -> Option<(usize, csv::ByteRecord)> {
+    pub fn remove(&mut self, csv_row_key: &CsvRowKey) -> Option<csv::ByteRecord> {
         self.map.remove(csv_row_key)
     }
 }
