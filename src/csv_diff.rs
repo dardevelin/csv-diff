@@ -23,28 +23,47 @@ enum DiffResult {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-struct CsvRowKey<'a> {
-    key: Vec<&'a [u8]>,
+struct CsvRowKey {
+    key: Vec<Vec<u8>>,
 }
 
-impl<'a> CsvRowKey<'a> {
+impl CsvRowKey {
     pub fn new() -> Self {
         Self {
             key: Vec::new(),
         }
     }
 
-    pub fn push_key_column(&mut self, key_column: &'a [u8]) {
+    pub fn push_key_column(&mut self, key_column: Vec<u8>) {
         self.key.push(key_column);
     }
 }
 
-impl<'a> From<Vec<&'a [u8]>> for CsvRowKey<'a> {
+impl From<Vec<Vec<u8>>> for CsvRowKey {
     
-    fn from(csv_row_key_vec: Vec<&'a [u8]>) -> Self {
+    fn from(csv_row_key_vec: Vec<Vec<u8>>) -> Self {
         Self {
             key: csv_row_key_vec,
         }
+    }
+}
+
+struct KeyByteRecord<'a, 'b> {
+    key_idx: &'a HashSet<usize>,
+    byte_record: &'b csv::ByteRecord,
+}
+
+impl From<KeyByteRecord<'_,'_>> for CsvRowKey {
+
+    fn from(key_byte_record: KeyByteRecord<'_, '_>) -> Self {
+        let mut row_key = Vec::new();
+        for idx in key_byte_record.key_idx.iter() {
+            if let Some(field) = key_byte_record.byte_record.get(*idx) {
+                let slice = Vec::from(field);
+                row_key.push(slice);
+            }
+        }
+        CsvRowKey::from(row_key)
     }
 }
 
@@ -60,29 +79,56 @@ impl CsvDiff {
     }
 
     pub fn diff<R: Read>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult> {
-        let mut csv_reader_left = csv::Reader::from_reader(csv_left);
+        let csv_reader_left = csv::Reader::from_reader(csv_left);
         let csv_reader_right = csv::Reader::from_reader(csv_right);
 
-        let csv_records_left = csv_reader_left.byte_records();
-        let mut csv_records_left_iter_enumerate = csv_records_left.enumerate();
-        let mut csv_records_right_iter = csv_reader_right.into_byte_records();
+        let csv_records_left = csv_reader_left.into_byte_records();
+        let mut csv_records_right_enumerate = csv_reader_right.into_byte_records().enumerate();
 
-        let csv_records_left_map: std::result::Result<ByteRecordMap, csv::Error> =
-            csv_records_left_iter_enumerate.try_fold(ByteRecordMap::new(&self.primary_key_columns), |mut acc, (row, curr_byte_record_res)| {
-                let byte_record = curr_byte_record_res?;
-                acc.insert(byte_record);
-                Ok(acc)
-        });
-        Ok(DiffResult::Equal)
+        let mut csv_records_right_map: ByteRecordMap =
+            csv_records_right_enumerate.try_fold::<_, _, csv::Result<ByteRecordMap>>(
+                    ByteRecordMap::new(&self.primary_key_columns), |mut acc, (row, curr_byte_record_res)| {
+                        let byte_record = curr_byte_record_res?;
+                        acc.insert(byte_record, row);
+                        Ok(acc)
+            })?;
+        
+        let mut diff_records = Vec::new();
+        for (line_left, byte_record_left_res) in csv_records_left.enumerate() {
+            let byte_record_left = byte_record_left_res?;
+            let csv_row_key = CsvRowKey::from(KeyByteRecord {
+                key_idx: &self.primary_key_columns,
+                byte_record: &byte_record_left
+            });
+            if let Some((line_right, byte_record_right)) = csv_records_right_map.remove(&csv_row_key) {
+                // we have a modification in our csv line or they are equal
+            } else {
+                // record has been deleted as it can't be found in csv on the right
+                let line_left = byte_record_left.position().unwrap().line();
+                diff_records.push(DiffRow::Deleted(RecordLineInfo::new(byte_record_left, line_left)));
+            }
+        }
+        // every record that has been added (which is in the right csv, but not in the left)
+        diff_records
+            .extend(csv_records_right_map.map.into_iter()
+                .map(|(_, (line, byte_record))| {
+                    let line = byte_record.position().unwrap().line();
+                    DiffRow::Added(RecordLineInfo::new(byte_record, line))
+                }));
+        Ok(if diff_records.is_empty() {
+            DiffResult::Equal
+        } else {
+            DiffResult::Different { diff_records }
+        })
     }
 }
 
-struct ByteRecordMap<'a, 'b> where 'b:'a {
+struct ByteRecordMap<'a> {
     key_idx: &'a HashSet<usize>,
-    map: HashMap<CsvRowKey<'a>, &'b csv::ByteRecord>,
+    map: HashMap<CsvRowKey, (usize, csv::ByteRecord)>,
 }
 
-impl<'a, 'b> ByteRecordMap<'a, 'b> {
+impl<'a> ByteRecordMap<'a> {
 
     pub fn new(key_idx: &'a HashSet<usize>) -> Self {
         Self {
@@ -91,17 +137,20 @@ impl<'a, 'b> ByteRecordMap<'a, 'b> {
         }
     }
 
-    pub fn insert(&mut self, byte_record: &'b csv::ByteRecord) where 'b:'a {
+    pub fn insert(&mut self, byte_record: csv::ByteRecord, row: usize) {
         let mut row_key = Vec::new();
-        {
-            for idx in self.key_idx.iter() {
-                if let Some(field) = byte_record.get(*idx) {
-                    row_key.push(field);
-                }
+        for idx in self.key_idx.iter() {
+            if let Some(field) = byte_record.get(*idx) {
+                let slice = Vec::from(field);
+                row_key.push(slice);
             }
         }
         
-        self.map.insert(CsvRowKey::from(row_key), byte_record);
+        self.map.insert(CsvRowKey::from(row_key), (row, byte_record));
+    }
+
+    pub fn remove(&mut self, csv_row_key: &CsvRowKey) -> Option<(usize, csv::ByteRecord)> {
+        self.map.remove(csv_row_key)
     }
 }
 
