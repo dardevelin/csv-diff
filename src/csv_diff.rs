@@ -4,22 +4,25 @@ use std::collections::{
     HashSet,
     HashMap,
 };
+use crate::diff_row::{
+    DiffRow,
+    RecordLineInfo
+};
 
+#[derive(Debug, PartialEq)]
 struct CsvDiff {
     primary_key_columns: HashSet<usize>,
 }
 
-struct DiffResult {
-
-}
-
-impl DiffResult {
-    pub fn new() -> Self {
-        Self {}
+#[derive(Debug, PartialEq)]
+enum DiffResult {
+    Equal,
+    Different {
+        diff_records: Vec<DiffRow>,
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 struct CsvRowKey<'a> {
     key: Vec<&'a [u8]>,
 }
@@ -36,6 +39,15 @@ impl<'a> CsvRowKey<'a> {
     }
 }
 
+impl<'a> From<Vec<&'a [u8]>> for CsvRowKey<'a> {
+    
+    fn from(csv_row_key_vec: Vec<&'a [u8]>) -> Self {
+        Self {
+            key: csv_row_key_vec,
+        }
+    }
+}
+
 impl CsvDiff {
 
     pub fn new() -> Self {
@@ -48,29 +60,107 @@ impl CsvDiff {
     }
 
     pub fn diff<R: Read>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult> {
-        let csv_reader_left = csv::Reader::from_reader(csv_left);
+        let mut csv_reader_left = csv::Reader::from_reader(csv_left);
         let csv_reader_right = csv::Reader::from_reader(csv_right);
 
-        let mut csv_records_left_iter_enumerate = csv_reader_left.into_byte_records().enumerate();
+        let csv_records_left = csv_reader_left.byte_records();
+        let mut csv_records_left_iter_enumerate = csv_records_left.enumerate();
         let mut csv_records_right_iter = csv_reader_right.into_byte_records();
 
-        let mut csv_records_left_map: HashMap<CsvRowKey, &csv::ByteRecord> = HashMap::new();
+        let csv_records_left_map: std::result::Result<ByteRecordMap, csv::Error> =
+            csv_records_left_iter_enumerate.try_fold(ByteRecordMap::new(&self.primary_key_columns), |mut acc, (row, curr_byte_record_res)| {
+                let byte_record = curr_byte_record_res?;
+                acc.insert(byte_record);
+                Ok(acc)
+        });
+        Ok(DiffResult::Equal)
+    }
+}
 
-        while let (Some((row_pos, byte_record_left_res)), Some(byte_record_right_res)) = (csv_records_left_iter_enumerate.next(), csv_records_right_iter.next()) {
-            let byte_record_left = byte_record_left_res?;
-            let byte_record_right = byte_record_right_res?;
+struct ByteRecordMap<'a, 'b> where 'b:'a {
+    key_idx: &'a HashSet<usize>,
+    map: HashMap<CsvRowKey<'a>, &'b csv::ByteRecord>,
+}
 
-            let mut csv_row_key_left = CsvRowKey::new();
-            let mut csv_row_key_right = CsvRowKey::new();
-            // column count is guaranteed to be the same here -> otherwise error would have been thrown above
-            for (column_pos, (field_left, field_right)) in byte_record_left.iter().zip(byte_record_right.iter()).enumerate() {
-                if self.primary_key_columns.contains(&column_pos) {
-                    csv_row_key_left.push_key_column(field_left);
-                    csv_row_key_right.push_key_column(field_right);
+impl<'a, 'b> ByteRecordMap<'a, 'b> {
+
+    pub fn new(key_idx: &'a HashSet<usize>) -> Self {
+        Self {
+            key_idx,
+            map: HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, byte_record: &'b csv::ByteRecord) where 'b:'a {
+        let mut row_key = Vec::new();
+        {
+            for idx in self.key_idx.iter() {
+                if let Some(field) = byte_record.get(*idx) {
+                    row_key.push(field);
                 }
-
             }
         }
-        Ok(DiffResult::new())
+        
+        self.map.insert(CsvRowKey::from(row_key), byte_record);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use pretty_assertions::{assert_eq, assert_ne};
+
+    #[test]
+    fn diff_one_line_with_header_no_diff() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Equal;
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_one_line_with_header_added_one() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        ";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: vec![
+                DiffRow::Added(RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2))
+            ]
+        };
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_one_line_with_header_deleted_one() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        ";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: vec![
+                DiffRow::Deleted(RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2))
+            ]
+        };
+
+        assert_eq!(diff_res_actual, diff_res_expected);
     }
 }
