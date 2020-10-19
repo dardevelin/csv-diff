@@ -6,7 +6,7 @@ pub(crate) enum DiffRow {
     Modified {
         deleted: RecordLineInfo,
         added: RecordLineInfo,
-        fields: HashSet<usize>,
+        field_indices: HashSet<usize>,
     },
     Deleted(RecordLineInfo),
 }
