@@ -193,6 +193,21 @@ mod tests {
     }
 
     #[test]
+    fn diff_one_line_with_header_crazy_characters_no_diff() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        ༼,౪,༽";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        ༼,౪,༽";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Equal;
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
     fn diff_one_line_with_header_added_one_line() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -286,6 +301,23 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c\n\
                         d,e,f";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Equal;
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_multiple_lines_with_header_different_order_no_diff() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        d,e,f\n\
+                        a,b,c";
 
         let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
         let diff_res_expected = DiffResult::Equal;
@@ -419,6 +451,168 @@ mod tests {
         let diff_res_expected = DiffResult::Different {
             diff_records: vec![
                 DiffRow::Deleted(RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4))
+            ]
+        };
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_multiple_lines_with_header_modified_one_line_at_start() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        x,y,z";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,x,c\n\
+                        d,e,f\n\
+                        x,y,z";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: vec![
+                DiffRow::Modified {
+                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "x", "c"]), 2),
+                    field_indices: HashSet::from_iter(vec![1]),
+                }
+            ]
+        };
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_multiple_lines_with_header_modified_one_line_at_start_different_order() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        x,y,z";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        d,e,f\n\
+                        a,x,c\n\
+                        x,y,z";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: vec![
+                DiffRow::Modified {
+                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "x", "c"]), 3),
+                    field_indices: HashSet::from_iter(vec![1]),
+                }
+            ]
+        };
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_multiple_lines_with_header_modified_one_line_at_middle() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        x,y,z";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,x,f\n\
+                        x,y,z";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: vec![
+                DiffRow::Modified {
+                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "e", "f"]), 3),
+                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "x", "f"]), 3),
+                    field_indices: HashSet::from_iter(vec![1]),
+                }
+            ]
+        };
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_multiple_lines_with_header_modified_one_line_at_middle_different_order() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        x,y,z";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        d,x,f\n\
+                        a,b,c\n\
+                        x,y,z";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: vec![
+                DiffRow::Modified {
+                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "e", "f"]), 3),
+                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "x", "f"]), 2),
+                    field_indices: HashSet::from_iter(vec![1]),
+                }
+            ]
+        };
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_multiple_lines_with_header_modified_one_line_at_end() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        x,y,z";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        x,x,z";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: vec![
+                DiffRow::Modified {
+                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
+                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "x", "z"]), 4),
+                    field_indices: HashSet::from_iter(vec![1]),
+                }
+            ]
+        };
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_multiple_lines_with_header_modified_one_line_at_end_different_order() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        x,y,z";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        x,x,z\n\
+                        a,b,c\n\
+                        d,e,f";
+
+        let diff_res_actual = CsvDiff::new().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: vec![
+                DiffRow::Modified {
+                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
+                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "x", "z"]), 2),
+                    field_indices: HashSet::from_iter(vec![1]),
+                }
             ]
         };
 
