@@ -11,6 +11,26 @@ pub(crate) enum DiffRow {
     Deleted(RecordLineInfo),
 }
 
+impl DiffRow {
+    pub fn line_num(&self) -> LineNum {
+        match self {
+            Self::Added(rli) | Self::Deleted(rli) => LineNum::OneSide(rli.line),
+            Self::Modified {deleted, added, ..} => LineNum::BothSides {
+                for_deleted: deleted.line,
+                for_added: added.line,
+            }
+        }
+    }
+}
+
+pub(crate) enum LineNum {
+    OneSide(u64),
+    BothSides {
+        for_deleted: u64,
+        for_added: u64,
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub(crate) struct RecordLineInfo {
     byte_record: csv::ByteRecord,
