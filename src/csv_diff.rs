@@ -4,6 +4,7 @@ use std::collections::{
     HashSet,
     HashMap,
 };
+use std::iter::FromIterator;
 use crate::diff_row::{
     DiffRow,
     RecordLineInfo,
@@ -11,12 +12,12 @@ use crate::diff_row::{
 };
 
 #[derive(Debug, PartialEq)]
-struct CsvDiff {
+pub struct CsvDiff {
     primary_key_columns: HashSet<usize>,
 }
 
 #[derive(Debug, PartialEq)]
-enum DiffResult {
+pub enum DiffResult {
     Equal,
     Different {
         diff_records: DiffRecords,
@@ -38,7 +39,7 @@ impl DiffResult {
 }
 
 #[derive(Debug, PartialEq)]
-struct DiffRecords(Vec<DiffRow>);
+pub struct DiffRecords(Vec<DiffRow>);
 
 impl DiffRecords {
     pub fn sort_by_line(&mut self) {
@@ -123,6 +124,25 @@ impl From<KeyByteRecord<'_,'_>> for CsvRowKey {
     }
 }
 
+pub struct CsvDiffBuilder {
+    primary_key_columns: HashSet<usize>,
+}
+
+impl CsvDiffBuilder {
+
+    pub fn primary_key_columns(self, columns: impl IntoIterator<Item=usize>) -> Self {
+        Self {
+            primary_key_columns: HashSet::from_iter(columns),
+            ..self
+        }
+    }
+    pub fn build(self) -> CsvDiff {
+        CsvDiff {
+            primary_key_columns: self.primary_key_columns
+        }
+    }
+}
+
 impl CsvDiff {
 
     pub fn new() -> Self {
@@ -132,6 +152,12 @@ impl CsvDiff {
         instance.primary_key_columns.insert(0);
         // TODO: when more than one primary key column is specified, we have to sort and dedup
         instance
+    }
+
+    pub fn builder() -> CsvDiffBuilder {
+        CsvDiffBuilder {
+            primary_key_columns: HashSet::new()
+        }
     }
 
     pub fn diff<R: Read>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult> {
@@ -877,6 +903,39 @@ mod tests {
                     field_indices: HashSet::from_iter(vec![2]),
                 },
                 DiffRow::Added(RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 5)),
+            ])
+        };
+
+        let _ = diff_res_actual.sort_by_line().unwrap();
+        let _ = diff_res_expected.sort_by_line().unwrap();
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_multiple_lines_with_header_combined_key_added_deleted_modified() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        g,h,i\n\
+                        m,n,o";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,x\n\
+                        g,h,i\n\
+                        d,f,f\n\
+                        m,n,o";
+
+        let mut diff_res_actual = CsvDiff::builder().primary_key_columns(vec![0, 1]).build().diff(csv_left.as_bytes(), csv_right.as_bytes()).unwrap();
+        let mut diff_res_expected = DiffResult::Different {
+            diff_records: DiffRecords(vec![
+                DiffRow::Modified {
+                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
+                    field_indices: HashSet::from_iter(vec![2]),
+                },
+                DiffRow::Deleted(RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "e", "f"]), 3)),
+                DiffRow::Added(RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "f", "f"]), 4)),
             ])
         };
 
