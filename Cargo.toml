@@ -11,3 +11,8 @@ csv = "1.1"
 
 [dev-dependencies]
 pretty_assertions = "0.6.1"
+criterion = "0.3"
+
+[[bench]]
+name = "bench_csv_diff"
+harness = false
