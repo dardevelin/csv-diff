@@ -10,14 +10,14 @@ use criterion::{
 use csv_diff::csv_diff;
 
 #[derive(Debug)]
-struct CsvGenerator {
-    rows: u64,
+pub struct CsvGenerator {
+    rows: usize,
     columns: usize,
 }
 
 impl CsvGenerator {
 
-    pub fn new(rows: u64, columns: usize) -> Self {
+    pub fn new(rows: usize, columns: usize) -> Self {
         Self {
             rows,
             columns,
@@ -25,16 +25,28 @@ impl CsvGenerator {
     }
 
     pub fn generate(&self) -> Vec<u8> {
-        let headers = (1..=self.columns).map(|col| format!("header{}", col)).collect::<Vec<_>>().join(",");
+        use fake::{
+            Faker,
+            Fake,
+            faker::lorem::en::*
+        };
+        let mut headers = (1..=self.columns).map(|col| format!("header{}", col)).collect::<Vec<_>>().join(",");
+        headers.push('\n');
         
+        let row: Vec<String> = Words(self.columns..self.columns + 1).fake::<Vec<String>>();
+        let row = row.join(",");
+        let rows: Vec<u8> = (0..self.rows)
+            .map(|_row| {
+                let mut test: Vec<_> = row.clone().into_bytes();
+                test.extend(b"\n");
+                test
+            }).flatten().collect();
 
+        rows
+    }
 
-        //todo!()
-        "\
-        header1,header2,header3\n\
-        a,b,c\n\
-        d,e,f\n\
-        x,y,z".into()
+    pub fn rows(&self) -> usize {
+        self.rows
     }
 }
 
@@ -51,8 +63,28 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let mut bench_group = c.benchmark_group("csv_diff");
 
-    for (csv_gen_left, csv_gen_right) in vec![(CsvGenerator::new(4, 3), CsvGenerator::new(4, 3))] {
-        let (csv_right, csv_left) = (csv_gen_left.generate(), csv_gen_right.generate());
+    for (csv_gen_left, csv_gen_right) in vec![
+        (CsvGenerator::new(4, 3), CsvGenerator::new(4, 3)),
+        (CsvGenerator::new(4, 10), CsvGenerator::new(4, 10)),
+        (CsvGenerator::new(4, 100), CsvGenerator::new(4, 100)),
+        (CsvGenerator::new(4, 1000), CsvGenerator::new(4, 1000)),
+        (CsvGenerator::new(10, 3), CsvGenerator::new(10, 3)),
+        (CsvGenerator::new(100, 3), CsvGenerator::new(100, 3)),
+        (CsvGenerator::new(1000, 3), CsvGenerator::new(1000, 3)),
+        (CsvGenerator::new(10_000, 3), CsvGenerator::new(10_000, 3)),
+        (CsvGenerator::new(100_000, 3), CsvGenerator::new(100_000, 3)),
+        (CsvGenerator::new(1_000_000, 3), CsvGenerator::new(1_000_000, 3)),
+        ] {
+        let (csv_left, csv_right) = (csv_gen_left.generate(), csv_gen_right.generate());
+        
+        bench_group.measurement_time(std::time::Duration::from_secs(
+            if csv_gen_left.rows() == 100_000 || csv_gen_right.rows() == 100_000 {
+                15
+            } else if csv_gen_left.rows() == 1_000_000 || csv_gen_right.rows() == 1_000_000 {
+                70
+            } else {
+                5
+            }));
         bench_group.throughput(Throughput::Bytes((csv_left.len() + csv_right.len()) as u64));
         bench_group.bench_with_input(BenchmarkId::from_parameter(format!("{} <> {}", csv_gen_left, csv_gen_right)), &(csv_left, csv_right), |b, (csv_left, csv_right)| {
             b.iter(|| csv_diff.diff(csv_left.as_slice(), csv_right.as_slice()).unwrap());
