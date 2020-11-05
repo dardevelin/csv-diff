@@ -33,15 +33,16 @@ impl CsvGenerator {
         let mut headers = (1..=self.columns).map(|col| format!("header{}", col)).collect::<Vec<_>>().join(",");
         headers.push('\n');
         
-        let row: Vec<String> = Words(self.columns..self.columns + 1).fake::<Vec<String>>();
-        let row = row.join(",");
-        let rows: Vec<u8> = (0..self.rows)
-            .map(|_row| {
-                let mut test: Vec<_> = row.clone().into_bytes();
-                test.extend(b"\n");
-                test
-            }).flatten().collect();
-
+        let rows = (0..self.rows())
+            .map(|row_idx| {
+                let mut row: Vec<String> = Words(self.columns..self.columns + 1).fake::<Vec<String>>();
+                row[0] = row_idx.to_string();
+                let mut row_string = row.join(",");
+                row_string.push('\n');
+                row_string.into_bytes()
+            })
+            .flatten()
+            .collect();
         rows
     }
 
