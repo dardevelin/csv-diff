@@ -1,5 +1,5 @@
 [package]
-name = "csv-diff"
+name = "bench_main"
 version = "0.1.0"
 authors = ["Jan Riemer <janriemer@tutanota.de>"]
 edition = "2018"
@@ -7,13 +7,5 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-csv = "1.1"
-
-[dev-dependencies]
-pretty_assertions = "0.6.1"
-criterion = "0.3"
-utils = { path = "benches/utils" }
-
-[[bench]]
-name = "bench_csv_diff"
-harness = false
+utils = { path = "../utils" }
+csv-diff = { path = "../.." }

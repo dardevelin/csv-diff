@@ -8,7 +8,7 @@ use criterion::{
     Criterion
 };
 use csv_diff::csv_diff;
-use utils::CsvGenerator;
+use utils::csv_generator::CsvGenerator;
 
 fn criterion_benchmark(c: &mut Criterion) {
     
