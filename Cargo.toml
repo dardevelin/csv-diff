@@ -12,8 +12,11 @@ csv = "1.1"
 [dev-dependencies]
 pretty_assertions = "0.6.1"
 criterion = "0.3"
-fake = "2.2"
-rand = "0.7.3"
+utils = { path = "benches/utils" }
+
+[[bin]]
+name = "bench_main"
+path = "benches/main.rs"
 
 [[bench]]
 name = "bench_csv_diff"
