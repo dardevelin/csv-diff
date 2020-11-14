@@ -169,9 +169,8 @@ impl CsvDiff {
         let csv_reader_right = csv::Reader::from_reader(csv_right);
 
         let csv_records_right = csv_reader_right.into_byte_records();
-        let csv_records_right = csv_records_right.map(|x| x).collect::<Vec<_>>();
         let mut csv_records_right_map = csv_records_right
-            .into_par_iter()
+            .par_bridge()
             .fold(|| ByteRecordMap::new(&self.primary_key_columns), |mut map, byte_record| {
                 // FIXME: use try_fold here
                 map.insert(byte_record.unwrap());
@@ -181,10 +180,6 @@ impl CsvDiff {
                 map.par_extend(byte_record_map);
                 map
             });
-            // .for_each_with(sender_record_right, |sender, csv_record_right| {
-            //     sender.send(CsvLeftRightParseResult::Right(csv_record_right)).unwrap();
-            // });
-
         // let mut csv_records_right_map: ByteRecordMap =
         // csv_records_right.try_fold::<_, _, csv::Result<ByteRecordMap>>(
         //         ByteRecordMap::new(&self.primary_key_columns), |mut acc, curr_byte_record_res| {
@@ -283,6 +278,10 @@ impl<'a> ByteRecordMap<'a> {
 
     pub fn remove(&mut self, csv_row_key: &CsvRowKey) -> Option<csv::ByteRecord> {
         self.map.remove(csv_row_key)
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
     }
 }
 
