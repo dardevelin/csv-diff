@@ -1,3 +1,6 @@
+use rayon::collections::hash_map::IntoIter;
+use rayon::iter::{ParallelExtend, IntoParallelIterator};
+use std::sync::Arc;
 use std::io::Read;
 use std::error::Error;
 use std::collections::{
@@ -160,20 +163,39 @@ impl CsvDiff {
         }
     }
 
-    pub fn diff<R: Read>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult> {
-        let csv_reader_left = csv::Reader::from_reader(csv_left);
+    pub fn diff<R: Read + Send>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult> {
+        use rayon::prelude::*;
+        
         let csv_reader_right = csv::Reader::from_reader(csv_right);
 
-        let csv_records_left = csv_reader_left.into_byte_records();
-        let mut csv_records_right = csv_reader_right.into_byte_records();
+        let csv_records_right = csv_reader_right.into_byte_records();
+        let csv_records_right = csv_records_right.map(|x| x).collect::<Vec<_>>();
+        let mut csv_records_right_map = csv_records_right
+            .into_par_iter()
+            .fold(|| ByteRecordMap::new(&self.primary_key_columns), |mut map, byte_record| {
+                // FIXME: use try_fold here
+                map.insert(byte_record.unwrap());
+                map
+            })
+            .reduce(|| ByteRecordMap::new(&self.primary_key_columns), |mut map, byte_record_map| {
+                map.par_extend(byte_record_map);
+                map
+            });
+            // .for_each_with(sender_record_right, |sender, csv_record_right| {
+            //     sender.send(CsvLeftRightParseResult::Right(csv_record_right)).unwrap();
+            // });
 
-        let mut csv_records_right_map: ByteRecordMap =
-            csv_records_right.try_fold::<_, _, csv::Result<ByteRecordMap>>(
-                    ByteRecordMap::new(&self.primary_key_columns), |mut acc, curr_byte_record_res| {
-                        let byte_record = curr_byte_record_res?;
-                        acc.insert(byte_record);
-                        Ok(acc)
-            })?;
+        // let mut csv_records_right_map: ByteRecordMap =
+        // csv_records_right.try_fold::<_, _, csv::Result<ByteRecordMap>>(
+        //         ByteRecordMap::new(&self.primary_key_columns), |mut acc, curr_byte_record_res| {
+        //             let byte_record = curr_byte_record_res?;
+        //             acc.insert(byte_record);
+        //             Ok(acc)
+        // })?;
+
+        
+        let csv_reader_left = csv::Reader::from_reader(csv_left);
+        let csv_records_left = csv_reader_left.into_byte_records();
         
         let mut diff_records = Vec::new();
         for byte_record_left_res in csv_records_left {
@@ -221,6 +243,11 @@ impl CsvDiff {
     }
 }
 
+enum CsvLeftRightParseResult {
+    Left(Arc<csv::Result<csv::ByteRecord>>),
+    Right(Arc<csv::Result<csv::ByteRecord>>)
+}
+
 struct ByteRecordMap<'a> {
     key_idx: &'a HashSet<usize>,
     map: HashMap<CsvRowKey, csv::ByteRecord>,
@@ -232,6 +259,13 @@ impl<'a> ByteRecordMap<'a> {
         Self {
             key_idx,
             map: HashMap::new(),
+        }
+    }
+
+    pub fn with_capacity(key_idx: &'a HashSet<usize>, capacity: usize) -> Self {
+        Self {
+            key_idx,
+            map: HashMap::with_capacity(capacity)
         }
     }
 
@@ -249,6 +283,22 @@ impl<'a> ByteRecordMap<'a> {
 
     pub fn remove(&mut self, csv_row_key: &CsvRowKey) -> Option<csv::ByteRecord> {
         self.map.remove(csv_row_key)
+    }
+}
+
+impl<'a> ParallelExtend<(CsvRowKey, csv::ByteRecord)> for ByteRecordMap<'a> {
+
+    fn par_extend<I>(&mut self, items: I) where I: IntoParallelIterator<Item = (CsvRowKey, csv::ByteRecord)> {
+        self.map.par_extend(items);
+    }
+}
+
+impl<'a> IntoParallelIterator for ByteRecordMap<'a> {
+    type Item = (CsvRowKey, csv::ByteRecord);
+    type Iter = IntoIter<CsvRowKey, csv::ByteRecord>;
+
+    fn into_par_iter(self) -> Self::Iter {
+        self.map.into_par_iter()
     }
 }
 
