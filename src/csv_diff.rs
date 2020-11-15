@@ -165,82 +165,97 @@ impl CsvDiff {
 
     pub fn diff<R: Read + Send>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult> {
         use rayon::prelude::*;
-        
-        let csv_reader_right = csv::Reader::from_reader(csv_right);
+        use std::sync::mpsc::{Sender, Receiver, channel};
 
-        let csv_records_right = csv_reader_right.into_byte_records();
-        let mut csv_records_right_map = csv_records_right
-            .par_bridge()
-            .fold(|| ByteRecordMap::new(&self.primary_key_columns), |mut map, byte_record| {
-                // FIXME: use try_fold here
-                map.insert(byte_record.unwrap());
-                map
-            })
-            .reduce(|| ByteRecordMap::new(&self.primary_key_columns), |mut map, byte_record_map| {
-                map.par_extend(byte_record_map);
-                map
+        let (sender_right, receiver) = channel();
+        let sender_left = sender_right.clone();
+        
+        rayon::scope(move |s| {
+            s.spawn(move |s1| {
+                let csv_reader_right = csv::Reader::from_reader(csv_right);
+                let csv_records_right = csv_reader_right.into_byte_records();
+                // TODO: do proper error handling
+                csv_records_right.for_each(|record| {
+                    sender_right.send(CsvLeftRightParseResult::Right(record)).unwrap();
+                    // ByteRecordMap::new(&self.primary_key_columns), |mut acc, curr_byte_record_res| {
+                    //     let byte_record = curr_byte_record_res.unwrap();
+                    //     acc.insert(byte_record);
+                    //     acc
+                });
             });
-        // let mut csv_records_right_map: ByteRecordMap =
-        // csv_records_right.try_fold::<_, _, csv::Result<ByteRecordMap>>(
-        //         ByteRecordMap::new(&self.primary_key_columns), |mut acc, curr_byte_record_res| {
-        //             let byte_record = curr_byte_record_res?;
-        //             acc.insert(byte_record);
-        //             Ok(acc)
-        // })?;
+            s.spawn(move |s2| {
+                let csv_reader_left = csv::Reader::from_reader(csv_left);
+                let csv_records_left = csv_reader_left.into_byte_records();
+                // TODO: do proper error handling
+                csv_records_left.for_each(|record| {
+                    sender_left.send(CsvLeftRightParseResult::Left(record)).unwrap();
+                });
+            });
 
-        
-        let csv_reader_left = csv::Reader::from_reader(csv_left);
-        let csv_records_left = csv_reader_left.into_byte_records();
-        
-        let mut diff_records = Vec::new();
-        for byte_record_left_res in csv_records_left {
-            let byte_record_left = byte_record_left_res?;
-            let csv_row_key = CsvRowKey::from(KeyByteRecord {
-                key_idx: &self.primary_key_columns,
-                byte_record: &byte_record_left
-            });
-            let line_left = byte_record_left.position().expect("There should be line info given.").line();
-            if let Some(byte_record_right) = csv_records_right_map.remove(&csv_row_key) {
-                // we have a modification in our csv line or they are equal
-                let fields_modified = byte_record_left.iter().enumerate().zip(byte_record_right.iter())
-                    .fold(HashSet::new(), |mut acc, ((idx, field_left), field_right)| {
-                        if field_left != field_right {
-                            acc.insert(idx);
-                        }
-                        acc
-                    });
-                if !fields_modified.is_empty() {
-                    let line_right = byte_record_right.position().expect("There should be line info given.").line();
-                    diff_records.push(DiffRow::Modified {
-                        deleted: RecordLineInfo::new(byte_record_left, line_left),
-                        added: RecordLineInfo::new(byte_record_right, line_right),
-                        field_indices: fields_modified
-                    });
+            // TODO: proper error handling
+            for record_left_right in receiver.recv() {
+                match record_left_right {
+                    CsvLeftRightParseResult::Left(left_record_res) => {
+                        let left_record = left_record_res.unwrap();
+                    },
+                    CsvLeftRightParseResult::Right(right_record_res) => {
+                        let right_record = right_record_res.unwrap();
+                    }
                 }
-            } else {
-                // record has been deleted as it can't be found in csv on the right
-                diff_records.push(DiffRow::Deleted(RecordLineInfo::new(byte_record_left, line_left)));
             }
-        }
+        });
+
+
+        // let mut diff_records = Vec::new();
+        // for byte_record_left_res in csv_records_left {
+        //     let byte_record_left = byte_record_left_res?;
+        //     let csv_row_key = CsvRowKey::from(KeyByteRecord {
+        //         key_idx: &self.primary_key_columns,
+        //         byte_record: &byte_record_left
+        //     });
+        //     let line_left = byte_record_left.position().expect("There should be line info given.").line();
+        //     if let Some(byte_record_right) = csv_records_right_map.remove(&csv_row_key) {
+        //         // we have a modification in our csv line or they are equal
+        //         let fields_modified = byte_record_left.iter().enumerate().zip(byte_record_right.iter())
+        //             .fold(HashSet::new(), |mut acc, ((idx, field_left), field_right)| {
+        //                 if field_left != field_right {
+        //                     acc.insert(idx);
+        //                 }
+        //                 acc
+        //             });
+        //         if !fields_modified.is_empty() {
+        //             let line_right = byte_record_right.position().expect("There should be line info given.").line();
+        //             diff_records.push(DiffRow::Modified {
+        //                 deleted: RecordLineInfo::new(byte_record_left, line_left),
+        //                 added: RecordLineInfo::new(byte_record_right, line_right),
+        //                 field_indices: fields_modified
+        //             });
+        //         }
+        //     } else {
+        //         // record has been deleted as it can't be found in csv on the right
+        //         diff_records.push(DiffRow::Deleted(RecordLineInfo::new(byte_record_left, line_left)));
+        //     }
+        // }
         
-        diff_records
-            // extend with every record that has been added (which is in the right csv, but not in the left)
-            .extend(csv_records_right_map.map.into_iter()
-                .map(|(_, byte_record)| {
-                    let line = byte_record.position().expect("There should be line info given.").line();
-                    DiffRow::Added(RecordLineInfo::new(byte_record, line))
-                }));
-        Ok(if diff_records.is_empty() {
-            DiffResult::Equal
-        } else {
-            DiffResult::Different { diff_records: DiffRecords(diff_records) }
-        })
+        // diff_records
+        //     // extend with every record that has been added (which is in the right csv, but not in the left)
+        //     .extend(csv_records_right_map.map.into_iter()
+        //         .map(|(_, byte_record)| {
+        //             let line = byte_record.position().expect("There should be line info given.").line();
+        //             DiffRow::Added(RecordLineInfo::new(byte_record, line))
+        //         }));
+        // Ok(if diff_records.is_empty() {
+        //     DiffResult::Equal
+        // } else {
+        //     DiffResult::Different { diff_records: DiffRecords(diff_records) }
+        // })
+        todo!();
     }
 }
 
 enum CsvLeftRightParseResult {
-    Left(Arc<csv::Result<csv::ByteRecord>>),
-    Right(Arc<csv::Result<csv::ByteRecord>>)
+    Left(csv::Result<csv::ByteRecord>),
+    Right(csv::Result<csv::ByteRecord>)
 }
 
 struct ByteRecordMap<'a> {
