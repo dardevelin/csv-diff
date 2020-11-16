@@ -280,26 +280,29 @@ impl CsvDiff {
             }
         }
 
-        for (_, byte_record_left) in csv_records_left_map.map.into_iter() {
+        diff_records.reserve(csv_records_left_map.map.len() + csv_records_right_map.map.len());
+
+        diff_records.par_extend(csv_records_left_map.map.into_par_iter().map(|(_, byte_record_left)| {
             let line_left = byte_record_left
                 .position()
                 .expect("There should be line info given.")
                 .line();
-            diff_records.push(DiffRow::Deleted(RecordLineInfo::new(
+            DiffRow::Deleted(RecordLineInfo::new(
                 byte_record_left,
                 line_left,
-            )));
-        }
-        for (_, byte_record_right) in csv_records_right_map.map.into_iter() {
+            ))
+        }));
+
+        diff_records.par_extend(csv_records_right_map.map.into_par_iter().map(|(_, byte_record_right)| {
             let line_right = byte_record_right
                 .position()
                 .expect("There should be line info given.")
                 .line();
-            diff_records.push(DiffRow::Added(RecordLineInfo::new(
+            DiffRow::Added(RecordLineInfo::new(
                 byte_record_right,
                 line_right,
-            )));
-        }
+            ))
+        }));
 
         Ok(if diff_records.is_empty() {
             DiffResult::Equal
