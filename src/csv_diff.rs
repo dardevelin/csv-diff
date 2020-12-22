@@ -1,7 +1,10 @@
 use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
 use std::collections::{HashMap, HashSet};
+use std::hash::Hasher;
 use std::io::Read;
 use std::iter::FromIterator;
+use std::iter::Iterator;
+use twox_hash::XxHash64;
 
 #[derive(Debug, PartialEq)]
 pub struct CsvDiff {
@@ -140,6 +143,23 @@ impl CsvDiffBuilder {
     }
 }
 
+#[derive(Debug, PartialEq)]
+struct RecordHash {
+    key: u64,
+    record_hash: u64,
+    record: csv::ByteRecord,
+}
+
+impl RecordHash {
+    pub fn new(key: u64, record_hash: u64, record: csv::ByteRecord) -> Self {
+        Self {
+            key,
+            record_hash,
+            record,
+        }
+    }
+}
+
 impl CsvDiff {
     pub fn new() -> Self {
         let mut instance = Self {
@@ -168,8 +188,17 @@ impl CsvDiff {
                 let csv_records_right = csv_reader_right.into_byte_records();
                 // TODO: do proper error handling
                 csv_records_right.for_each(|record| {
+                    let mut hasher = XxHash64::default();
+                    let record = record.unwrap();
+                    hasher.write(record.get(0).unwrap());
+                    let key = hasher.finish();
+                    hasher.write(record.as_slice());
                     sender_right
-                        .send(CsvLeftRightParseResult::Right(record))
+                        .send(CsvLeftRightParseResult::Right(RecordHash::new(
+                            key,
+                            hasher.finish(),
+                            record,
+                        )))
                         .unwrap();
                 });
             });
@@ -178,8 +207,17 @@ impl CsvDiff {
                 let csv_records_left = csv_reader_left.into_byte_records();
                 // TODO: do proper error handling
                 csv_records_left.for_each(|record| {
+                    let mut hasher = XxHash64::default();
+                    let record = record.unwrap();
+                    hasher.write(record.get(0).unwrap());
+                    let key = hasher.finish();
+                    hasher.write(record.as_slice());
                     sender_left
-                        .send(CsvLeftRightParseResult::Left(record))
+                        .send(CsvLeftRightParseResult::Left(RecordHash::new(
+                            key,
+                            hasher.finish(),
+                            record,
+                        )))
                         .unwrap();
                 });
             });
@@ -192,7 +230,7 @@ impl CsvDiff {
         for record_left_right in receiver {
             match record_left_right {
                 CsvLeftRightParseResult::Left(left_record_res) => {
-                    let byte_record_left = left_record_res.unwrap();
+                    let byte_record_left = left_record_res.record;
                     let csv_row_key_left = CsvRowKey::from(KeyByteRecord {
                         key_idx: &self.primary_key_columns,
                         byte_record: &byte_record_left,
@@ -235,7 +273,7 @@ impl CsvDiff {
                     }
                 }
                 CsvLeftRightParseResult::Right(right_record_res) => {
-                    let byte_record_right = right_record_res.unwrap();
+                    let byte_record_right = right_record_res.record;
                     let csv_row_key_right = CsvRowKey::from(KeyByteRecord {
                         key_idx: &self.primary_key_columns,
                         byte_record: &byte_record_right,
@@ -282,27 +320,25 @@ impl CsvDiff {
 
         diff_records.reserve(csv_records_left_map.map.len() + csv_records_right_map.map.len());
 
-        diff_records.par_extend(csv_records_left_map.map.into_par_iter().map(|(_, byte_record_left)| {
-            let line_left = byte_record_left
-                .position()
-                .expect("There should be line info given.")
-                .line();
-            DiffRow::Deleted(RecordLineInfo::new(
-                byte_record_left,
-                line_left,
-            ))
-        }));
+        diff_records.par_extend(csv_records_left_map.map.into_par_iter().map(
+            |(_, byte_record_left)| {
+                let line_left = byte_record_left
+                    .position()
+                    .expect("There should be line info given.")
+                    .line();
+                DiffRow::Deleted(RecordLineInfo::new(byte_record_left, line_left))
+            },
+        ));
 
-        diff_records.par_extend(csv_records_right_map.map.into_par_iter().map(|(_, byte_record_right)| {
-            let line_right = byte_record_right
-                .position()
-                .expect("There should be line info given.")
-                .line();
-            DiffRow::Added(RecordLineInfo::new(
-                byte_record_right,
-                line_right,
-            ))
-        }));
+        diff_records.par_extend(csv_records_right_map.map.into_par_iter().map(
+            |(_, byte_record_right)| {
+                let line_right = byte_record_right
+                    .position()
+                    .expect("There should be line info given.")
+                    .line();
+                DiffRow::Added(RecordLineInfo::new(byte_record_right, line_right))
+            },
+        ));
 
         Ok(if diff_records.is_empty() {
             DiffResult::Equal
@@ -315,8 +351,8 @@ impl CsvDiff {
 }
 
 enum CsvLeftRightParseResult {
-    Left(csv::Result<csv::ByteRecord>),
-    Right(csv::Result<csv::ByteRecord>),
+    Left(RecordHash),
+    Right(RecordHash),
 }
 
 struct ByteRecordMap<'a> {
