@@ -147,15 +147,15 @@ impl CsvDiffBuilder {
 struct RecordHash {
     key: u64,
     record_hash: u64,
-    record: csv::ByteRecord,
+    line: u64,
 }
 
 impl RecordHash {
-    pub fn new(key: u64, record_hash: u64, record: csv::ByteRecord) -> Self {
+    pub fn new(key: u64, record_hash: u64, line: u64) -> Self {
         Self {
             key,
             record_hash,
-            record,
+            line,
         }
     }
 }
@@ -184,159 +184,239 @@ impl CsvDiff {
         let sender_left = sender_right.clone();
         rayon::scope(move |s| {
             s.spawn(move |_s1| {
-                let csv_reader_right = csv::Reader::from_reader(csv_right);
-                let csv_records_right = csv_reader_right.into_byte_records();
-                // TODO: do proper error handling
-                csv_records_right.for_each(|record| {
+                let mut csv_reader_right = csv::Reader::from_reader(csv_right);
+                let mut csv_record_right = csv::ByteRecord::new();
+                // read first record in order to get the number of fields
+                csv_reader_right
+                    .read_byte_record(&mut csv_record_right)
+                    .expect("TODO: error handling");
+                let csv_record_right_first = std::mem::take(&mut csv_record_right);
+                let num_of_fields = csv_record_right_first.len();
+
+                let mut hasher = XxHash64::default();
+                let record = csv_record_right_first;
+                hasher.write(record.get(0).unwrap());
+                let key = hasher.finish();
+                hasher.write(record.as_slice());
+                sender_right
+                    .send(CsvLeftRightParseResult::Right(RecordHash::new(
+                        key,
+                        hasher.finish(),
+                        1,
+                    )))
+                    .unwrap();
+                let mut line = 2;
+                while csv_reader_right
+                    .read_byte_record(&mut csv_record_right)
+                    .unwrap_or(false)
+                {
                     let mut hasher = XxHash64::default();
-                    let record = record.unwrap();
-                    hasher.write(record.get(0).unwrap());
+                    hasher.write(&csv_record_right[0]);
                     let key = hasher.finish();
-                    hasher.write(record.as_slice());
+                    for i in 1..num_of_fields {
+                        hasher.write(&csv_record_right[i]);
+                    }
                     sender_right
                         .send(CsvLeftRightParseResult::Right(RecordHash::new(
                             key,
                             hasher.finish(),
-                            record,
+                            line,
                         )))
                         .unwrap();
-                });
+                    line += 1;
+                }
             });
             s.spawn(move |_s2| {
-                let csv_reader_left = csv::Reader::from_reader(csv_left);
-                let csv_records_left = csv_reader_left.into_byte_records();
-                // TODO: do proper error handling
-                csv_records_left.for_each(|record| {
+                let mut csv_reader_left = csv::Reader::from_reader(csv_left);
+                let mut csv_record_left = csv::ByteRecord::new();
+                // read first record in order to get the number of fields
+                csv_reader_left
+                    .read_byte_record(&mut csv_record_left)
+                    .expect("TODO: error handling");
+                let csv_record_left_first = std::mem::take(&mut csv_record_left);
+                let num_of_fields = csv_record_left_first.len();
+
+                let mut hasher = XxHash64::default();
+                let record = csv_record_left_first;
+                hasher.write(record.get(0).unwrap());
+                let key = hasher.finish();
+                hasher.write(record.as_slice());
+                sender_left
+                    .send(CsvLeftRightParseResult::Left(RecordHash::new(
+                        key,
+                        hasher.finish(),
+                        1,
+                    )))
+                    .unwrap();
+                let mut line = 2;
+                while csv_reader_left
+                    .read_byte_record(&mut csv_record_left)
+                    .unwrap_or(false)
+                {
                     let mut hasher = XxHash64::default();
-                    let record = record.unwrap();
-                    hasher.write(record.get(0).unwrap());
+                    hasher.write(&csv_record_left[0]);
                     let key = hasher.finish();
-                    hasher.write(record.as_slice());
+                    for i in 1..num_of_fields {
+                        hasher.write(&csv_record_left[i]);
+                    }
                     sender_left
                         .send(CsvLeftRightParseResult::Left(RecordHash::new(
                             key,
                             hasher.finish(),
-                            record,
+                            line,
                         )))
                         .unwrap();
-                });
+                    line += 1;
+                }
             });
         });
 
-        let mut csv_records_right_map = ByteRecordMap::new(&self.primary_key_columns);
-        let mut csv_records_left_map = ByteRecordMap::new(&self.primary_key_columns);
+        let mut csv_records_right_map: HashMap<u64, HashMapValue<u64>> = HashMap::new();
+        let mut csv_records_left_map: HashMap<u64, HashMapValue<u64>> = HashMap::new();
+        let mut intermediate_left_map: HashMap<u64, HashMapValue<u64>> = HashMap::new();
+        let mut intermediate_right_map: HashMap<u64, HashMapValue<u64>> = HashMap::new();
 
         let mut diff_records = Vec::new();
         for record_left_right in receiver {
             match record_left_right {
                 CsvLeftRightParseResult::Left(left_record_res) => {
-                    let byte_record_left = left_record_res.record;
-                    let csv_row_key_left = CsvRowKey::from(KeyByteRecord {
-                        key_idx: &self.primary_key_columns,
-                        byte_record: &byte_record_left,
-                    });
-                    match csv_records_right_map.remove(&csv_row_key_left) {
-                        Some(byte_record_right) => {
-                            let line_left = byte_record_left
-                                .position()
-                                .expect("There should be line info given.")
-                                .line();
-                            //we have a modification in our csv line or they are equal
-                            let fields_modified = byte_record_left
-                                .iter()
-                                .enumerate()
-                                .zip(byte_record_right.iter())
-                                .fold(
-                                    HashSet::new(),
-                                    |mut acc, ((idx, field_left), field_right)| {
-                                        if field_left != field_right {
-                                            acc.insert(idx);
-                                        }
-                                        acc
-                                    },
-                                );
-                            if !fields_modified.is_empty() {
-                                let line_right = byte_record_right
-                                    .position()
-                                    .expect("There should be line info given.")
-                                    .line();
-                                diff_records.push(DiffRow::Modified {
-                                    deleted: RecordLineInfo::new(byte_record_left, line_left),
-                                    added: RecordLineInfo::new(byte_record_right, line_right),
-                                    field_indices: fields_modified,
-                                });
+                    let line_left = left_record_res.line;
+                    let key = left_record_res.key;
+                    let record_hash_left = left_record_res.record_hash;
+                    match csv_records_right_map.get_mut(&key) {
+                        Some(hash_map_val) => {
+                            match hash_map_val {
+                                HashMapValue::Initial(record_hash_right) => {
+                                    if record_hash_left != *record_hash_right {
+                                        // TODO: logically this is totally wrong -> we need the correct payload here
+                                        // which is the line humbers in the csv's of left and right
+                                        *hash_map_val = HashMapValue::Modified(record_hash_left);
+                                        diff_records.push(DiffRow::Modified {
+                                            added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                                            deleted: RecordLineInfo::new(
+                                                csv::ByteRecord::new(),
+                                                42,
+                                            ),
+                                            field_indices: HashSet::from_iter(1usize..4),
+                                        })
+                                    } else {
+                                        *hash_map_val = HashMapValue::Equal(record_hash_left);
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                         None => {
-                            csv_records_left_map.insert(byte_record_left);
+                            csv_records_left_map
+                                .insert(key, HashMapValue::Initial(record_hash_left));
                         }
+                        _ => {}
                     }
+                    // TODO: this is wrong, because what if we have a lot of added or deleted records?
+                    // => they would all be in an initial state and therefore all be re-inserted back into the map
+                    // if csv_records_right_map.len() % (csv_records_right_map.len() / 10).max(1) == 0
+                    // {
+                    //     csv_records_right_map.drain().for_each(|(k, v)| {
+                    //         match v {
+                    //             HashMapValue::Equal(hash) => {
+                    //                 // nothing to do - will be removed
+                    //             }
+                    //             HashMapValue::Initial(hash) => {
+                    //                 // put it back, because we don't know what to do with this value yet
+                    //                 intermediate_right_map.insert(k, v);
+                    //             }
+                    //             HashMapValue::Modified(hash) => {
+                    //                 diff_records.push(DiffRow::Modified {
+                    //                     added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                    //                     deleted: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                    //                     field_indices: HashSet::from_iter(1usize..4),
+                    //                 })
+                    //             }
+                    //         }
+                    //     });
+                    //     intermediate_right_map.drain().for_each(|(k, v)| {
+                    //         csv_records_right_map.insert(k, v);
+                    //     });
+                    // }
                 }
                 CsvLeftRightParseResult::Right(right_record_res) => {
-                    let byte_record_right = right_record_res.record;
-                    let csv_row_key_right = CsvRowKey::from(KeyByteRecord {
-                        key_idx: &self.primary_key_columns,
-                        byte_record: &byte_record_right,
-                    });
-                    match csv_records_left_map.remove(&csv_row_key_right) {
-                        Some(byte_record_left) => {
-                            let line_right = byte_record_right
-                                .position()
-                                .expect("There should be line info given.")
-                                .line();
-                            //we have a modification in our csv line or they are equal
-                            let fields_modified = byte_record_left
-                                .iter()
-                                .enumerate()
-                                .zip(byte_record_right.iter())
-                                .fold(
-                                    HashSet::new(),
-                                    |mut acc, ((idx, field_left), field_right)| {
-                                        if field_left != field_right {
-                                            acc.insert(idx);
-                                        }
-                                        acc
-                                    },
-                                );
-                            if !fields_modified.is_empty() {
-                                let line_left = byte_record_left
-                                    .position()
-                                    .expect("There should be line info given.")
-                                    .line();
-                                diff_records.push(DiffRow::Modified {
-                                    deleted: RecordLineInfo::new(byte_record_left, line_left),
-                                    added: RecordLineInfo::new(byte_record_right, line_right),
-                                    field_indices: fields_modified,
-                                });
+                    let line_right = right_record_res.line;
+                    let key = right_record_res.key;
+                    let record_hash_right = right_record_res.record_hash;
+                    match csv_records_left_map.get_mut(&key) {
+                        Some(hash_map_val) => {
+                            match hash_map_val {
+                                HashMapValue::Initial(record_hash_left) => {
+                                    if *record_hash_left != record_hash_right {
+                                        // TODO: logically this is totally wrong -> we need the correct payload here
+                                        // which is the line humbers in the csv's of left and right
+                                        *hash_map_val = HashMapValue::Modified(record_hash_right);
+                                        diff_records.push(DiffRow::Modified {
+                                            added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                                            deleted: RecordLineInfo::new(
+                                                csv::ByteRecord::new(),
+                                                42,
+                                            ),
+                                            field_indices: HashSet::from_iter(1usize..4),
+                                        })
+                                    } else {
+                                        *hash_map_val = HashMapValue::Equal(record_hash_right);
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                         None => {
-                            csv_records_right_map.insert(byte_record_right);
+                            csv_records_left_map
+                                .insert(key, HashMapValue::Initial(record_hash_right));
                         }
                     }
+                    // if csv_records_left_map.len() % (csv_records_left_map.len() / 10).max(1) == 0 {
+                    //     csv_records_left_map.drain().for_each(|(k, v)| {
+                    //         match v {
+                    //             HashMapValue::Equal(hash) => {
+                    //                 // nothing to do - will be removed
+                    //             }
+                    //             HashMapValue::Initial(hash) => {
+                    //                 // put it back, because we don't know what to do with this value yet
+                    //                 intermediate_left_map.insert(k, v);
+                    //             }
+                    //             HashMapValue::Modified(hash) => {
+                    //                 diff_records.push(DiffRow::Modified {
+                    //                     added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                    //                     deleted: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                    //                     field_indices: HashSet::from_iter(1usize..4),
+                    //                 })
+                    //             }
+                    //         }
+                    //     });
+                    //     intermediate_left_map.drain().for_each(|(k, v)| {
+                    //         csv_records_left_map.insert(k, v);
+                    //     });
+                    // }
                 }
             }
         }
 
-        diff_records.reserve(csv_records_left_map.map.len() + csv_records_right_map.map.len());
+        //diff_records.reserve(csv_records_left_map.map.len() + csv_records_right_map.map.len());
 
-        diff_records.par_extend(csv_records_left_map.map.into_par_iter().map(
-            |(_, byte_record_left)| {
-                let line_left = byte_record_left
-                    .position()
-                    .expect("There should be line info given.")
-                    .line();
-                DiffRow::Deleted(RecordLineInfo::new(byte_record_left, line_left))
+        diff_records.par_extend(csv_records_left_map.into_par_iter().filter_map(
+            |(_, v)| match v {
+                HashMapValue::Initial(hash) => Some(DiffRow::Deleted(RecordLineInfo::new(
+                    csv::ByteRecord::new(),
+                    42,
+                ))),
+                _ => None,
             },
         ));
 
-        diff_records.par_extend(csv_records_right_map.map.into_par_iter().map(
-            |(_, byte_record_right)| {
-                let line_right = byte_record_right
-                    .position()
-                    .expect("There should be line info given.")
-                    .line();
-                DiffRow::Added(RecordLineInfo::new(byte_record_right, line_right))
+        diff_records.par_extend(csv_records_right_map.into_par_iter().filter_map(
+            |(_, v)| match v {
+                HashMapValue::Initial(hash) => Some(DiffRow::Added(RecordLineInfo::new(
+                    csv::ByteRecord::new(),
+                    42,
+                ))),
+                _ => None,
             },
         ));
 
@@ -355,49 +435,10 @@ enum CsvLeftRightParseResult {
     Right(RecordHash),
 }
 
-struct ByteRecordMap<'a> {
-    key_idx: &'a HashSet<usize>,
-    map: HashMap<CsvRowKey, csv::ByteRecord>,
-}
-
-impl<'a> ByteRecordMap<'a> {
-    pub fn new(key_idx: &'a HashSet<usize>) -> Self {
-        Self {
-            key_idx,
-            map: HashMap::new(),
-        }
-    }
-
-    pub fn with_capacity(key_idx: &'a HashSet<usize>, capacity: usize) -> Self {
-        Self {
-            key_idx,
-            map: HashMap::with_capacity(capacity),
-        }
-    }
-
-    pub fn insert(&mut self, byte_record: csv::ByteRecord) {
-        let mut row_key = Vec::new();
-        for idx in self.key_idx.iter() {
-            if let Some(field) = byte_record.get(*idx) {
-                let slice = Vec::from(field);
-                row_key.push(slice);
-            }
-        }
-
-        self.map.insert(CsvRowKey::from(row_key), byte_record);
-    }
-
-    pub fn get(&self, csv_row_key: &CsvRowKey) -> Option<&csv::ByteRecord> {
-        self.map.get(csv_row_key)
-    }
-
-    pub fn remove(&mut self, csv_row_key: &CsvRowKey) -> Option<csv::ByteRecord> {
-        self.map.remove(csv_row_key)
-    }
-
-    pub fn len(&self) -> usize {
-        self.map.len()
-    }
+enum HashMapValue<T> {
+    Initial(T),
+    Equal(T),
+    Modified(T),
 }
 
 #[cfg(test)]
