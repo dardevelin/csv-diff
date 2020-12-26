@@ -307,7 +307,7 @@ impl CsvDiff {
                             }
                         }
                         None => {
-                            csv_records_left_map
+                            csv_records_right_map
                                 .insert(key, HashMapValue::Initial(record_hash_left));
                         }
                         _ => {}

@@ -41,7 +41,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             |b, (csv_left, csv_right)| {
                 b.iter(|| {
                     csv_diff
-                        .diff(csv_left.as_slice(), csv_right.as_slice())
+                        .diff(csv_left.as_slice(), csv_left.as_slice())
                         .unwrap()
                 });
             },
