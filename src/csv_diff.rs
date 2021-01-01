@@ -1,10 +1,10 @@
 use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
+use ahash::AHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hasher;
 use std::io::Read;
 use std::iter::FromIterator;
 use std::iter::Iterator;
-use twox_hash::XxHash64;
 
 #[derive(Debug, PartialEq)]
 pub struct CsvDiff {
@@ -193,7 +193,7 @@ impl CsvDiff {
                 let csv_record_right_first = std::mem::take(&mut csv_record_right);
                 let num_of_fields = csv_record_right_first.len();
 
-                let mut hasher = XxHash64::default();
+                let mut hasher = AHasher::default();
                 let record = csv_record_right_first;
                 hasher.write(record.get(0).unwrap());
                 let key = hasher.finish();
@@ -210,7 +210,7 @@ impl CsvDiff {
                     .read_byte_record(&mut csv_record_right)
                     .unwrap_or(false)
                 {
-                    let mut hasher = XxHash64::default();
+                    let mut hasher = AHasher::default();
                     hasher.write(&csv_record_right[0]);
                     let key = hasher.finish();
                     for i in 1..num_of_fields {
@@ -236,7 +236,7 @@ impl CsvDiff {
                 let csv_record_left_first = std::mem::take(&mut csv_record_left);
                 let num_of_fields = csv_record_left_first.len();
 
-                let mut hasher = XxHash64::default();
+                let mut hasher = AHasher::default();
                 let record = csv_record_left_first;
                 hasher.write(record.get(0).unwrap());
                 let key = hasher.finish();
@@ -253,7 +253,7 @@ impl CsvDiff {
                     .read_byte_record(&mut csv_record_left)
                     .unwrap_or(false)
                 {
-                    let mut hasher = XxHash64::default();
+                    let mut hasher = AHasher::default();
                     hasher.write(&csv_record_left[0]);
                     let key = hasher.finish();
                     for i in 1..num_of_fields {
