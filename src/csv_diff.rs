@@ -180,6 +180,8 @@ impl CsvDiff {
         use rayon::prelude::*;
         use std::sync::mpsc::{channel, Receiver, Sender};
 
+        let (sender_total_lines_right, receiver_total_lines_right) = channel();
+        let (sender_total_lines_left, receiver_total_lines_left) = channel();
         let (sender_right, receiver) = channel();
         let sender_left = sender_right.clone();
         rayon::scope(move |s| {
@@ -225,6 +227,7 @@ impl CsvDiff {
                         .unwrap();
                     line += 1;
                 }
+                sender_total_lines_right.send(line).unwrap();
             });
             s.spawn(move |_s2| {
                 let mut csv_reader_left = csv::Reader::from_reader(csv_left);
@@ -268,11 +271,22 @@ impl CsvDiff {
                         .unwrap();
                     line += 1;
                 }
+                sender_total_lines_left.send(line).unwrap();
             });
         });
 
-        let mut csv_records_right_map: HashMap<u64, HashMapValue<u64>> = HashMap::new();
-        let mut csv_records_left_map: HashMap<u64, HashMapValue<u64>> = HashMap::new();
+        let (total_lines_right, total_lines_left) = (
+            receiver_total_lines_right.recv().unwrap(),
+            receiver_total_lines_left.recv().unwrap(),
+        );
+        let max_capacity_for_hash_map_right =
+            (total_lines_right / 100).min(total_lines_right) as usize;
+        let max_capacity_for_hash_map_left =
+            (total_lines_left / 100).min(total_lines_left) as usize;
+        let mut csv_records_right_map: HashMap<u64, HashMapValue<u64>> =
+            HashMap::with_capacity(max_capacity_for_hash_map_right);
+        let mut csv_records_left_map: HashMap<u64, HashMapValue<u64>> =
+            HashMap::with_capacity(max_capacity_for_hash_map_left);
         let mut intermediate_left_map: HashMap<u64, HashMapValue<u64>> = HashMap::new();
         let mut intermediate_right_map: HashMap<u64, HashMapValue<u64>> = HashMap::new();
 
@@ -304,7 +318,7 @@ impl CsvDiff {
                         }
                         _ => {}
                     }
-                    if line_left % 10_000 == 0 {
+                    if line_left % max_capacity_for_hash_map_right as u64 == 0 {
                         csv_records_right_map.drain().for_each(|(k, v)| {
                             match v {
                                 HashMapValue::Equal(hash) => {
@@ -350,7 +364,7 @@ impl CsvDiff {
                                 .insert(key, HashMapValue::Initial(record_hash_right));
                         }
                     }
-                    if line_right % 10_000 == 0 {
+                    if line_right % max_capacity_for_hash_map_left as u64 == 0 {
                         csv_records_left_map.drain().for_each(|(k, v)| {
                             match v {
                                 HashMapValue::Equal(hash) => {
