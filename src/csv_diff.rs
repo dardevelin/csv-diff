@@ -291,14 +291,6 @@ impl CsvDiff {
                                         // TODO: logically this is totally wrong -> we need the correct payload here
                                         // which is the line humbers in the csv's of left and right
                                         *hash_map_val = HashMapValue::Modified(record_hash_left);
-                                        diff_records.push(DiffRow::Modified {
-                                            added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
-                                            deleted: RecordLineInfo::new(
-                                                csv::ByteRecord::new(),
-                                                42,
-                                            ),
-                                            field_indices: HashSet::from_iter(1usize..4),
-                                        })
                                     } else {
                                         *hash_map_val = HashMapValue::Equal(record_hash_left);
                                     }
@@ -307,37 +299,32 @@ impl CsvDiff {
                             }
                         }
                         None => {
-                            csv_records_right_map
+                            csv_records_left_map
                                 .insert(key, HashMapValue::Initial(record_hash_left));
                         }
                         _ => {}
                     }
-                    // TODO: this is wrong, because what if we have a lot of added or deleted records?
-                    // => they would all be in an initial state and therefore all be re-inserted back into the map
-                    // if csv_records_right_map.len() % (csv_records_right_map.len() / 10).max(1) == 0
-                    // {
-                    //     csv_records_right_map.drain().for_each(|(k, v)| {
-                    //         match v {
-                    //             HashMapValue::Equal(hash) => {
-                    //                 // nothing to do - will be removed
-                    //             }
-                    //             HashMapValue::Initial(hash) => {
-                    //                 // put it back, because we don't know what to do with this value yet
-                    //                 intermediate_right_map.insert(k, v);
-                    //             }
-                    //             HashMapValue::Modified(hash) => {
-                    //                 diff_records.push(DiffRow::Modified {
-                    //                     added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
-                    //                     deleted: RecordLineInfo::new(csv::ByteRecord::new(), 42),
-                    //                     field_indices: HashSet::from_iter(1usize..4),
-                    //                 })
-                    //             }
-                    //         }
-                    //     });
-                    //     intermediate_right_map.drain().for_each(|(k, v)| {
-                    //         csv_records_right_map.insert(k, v);
-                    //     });
-                    // }
+                    if line_left % 10_000 == 0 {
+                        csv_records_right_map.drain().for_each(|(k, v)| {
+                            match v {
+                                HashMapValue::Equal(hash) => {
+                                    // nothing to do - will be removed
+                                }
+                                HashMapValue::Initial(hash) => {
+                                    // put it back, because we don't know what to do with this value yet
+                                    intermediate_right_map.insert(k, v);
+                                }
+                                HashMapValue::Modified(hash) => {
+                                    diff_records.push(DiffRow::Modified {
+                                        added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                                        deleted: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                                        field_indices: HashSet::from_iter(1usize..4),
+                                    })
+                                }
+                            }
+                        });
+                        std::mem::swap(&mut intermediate_right_map, &mut csv_records_right_map);
+                    }
                 }
                 CsvLeftRightParseResult::Right(right_record_res) => {
                     let line_right = right_record_res.line;
@@ -350,50 +337,40 @@ impl CsvDiff {
                                     if *record_hash_left != record_hash_right {
                                         // TODO: logically this is totally wrong -> we need the correct payload here
                                         // which is the line humbers in the csv's of left and right
-                                        *hash_map_val = HashMapValue::Modified(record_hash_right);
-                                        diff_records.push(DiffRow::Modified {
-                                            added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
-                                            deleted: RecordLineInfo::new(
-                                                csv::ByteRecord::new(),
-                                                42,
-                                            ),
-                                            field_indices: HashSet::from_iter(1usize..4),
-                                        })
+                                        *hash_map_val = HashMapValue::Modified(*record_hash_left);
                                     } else {
-                                        *hash_map_val = HashMapValue::Equal(record_hash_right);
+                                        *hash_map_val = HashMapValue::Equal(*record_hash_left);
                                     }
                                 }
                                 _ => {}
                             }
                         }
                         None => {
-                            csv_records_left_map
+                            csv_records_right_map
                                 .insert(key, HashMapValue::Initial(record_hash_right));
                         }
                     }
-                    // if csv_records_left_map.len() % (csv_records_left_map.len() / 10).max(1) == 0 {
-                    //     csv_records_left_map.drain().for_each(|(k, v)| {
-                    //         match v {
-                    //             HashMapValue::Equal(hash) => {
-                    //                 // nothing to do - will be removed
-                    //             }
-                    //             HashMapValue::Initial(hash) => {
-                    //                 // put it back, because we don't know what to do with this value yet
-                    //                 intermediate_left_map.insert(k, v);
-                    //             }
-                    //             HashMapValue::Modified(hash) => {
-                    //                 diff_records.push(DiffRow::Modified {
-                    //                     added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
-                    //                     deleted: RecordLineInfo::new(csv::ByteRecord::new(), 42),
-                    //                     field_indices: HashSet::from_iter(1usize..4),
-                    //                 })
-                    //             }
-                    //         }
-                    //     });
-                    //     intermediate_left_map.drain().for_each(|(k, v)| {
-                    //         csv_records_left_map.insert(k, v);
-                    //     });
-                    // }
+                    if line_right % 10_000 == 0 {
+                        csv_records_left_map.drain().for_each(|(k, v)| {
+                            match v {
+                                HashMapValue::Equal(hash) => {
+                                    // nothing to do - will be removed
+                                }
+                                HashMapValue::Initial(hash) => {
+                                    // put it back, because we don't know what to do with this value yet
+                                    intermediate_left_map.insert(k, v);
+                                }
+                                HashMapValue::Modified(hash) => {
+                                    diff_records.push(DiffRow::Modified {
+                                        added: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                                        deleted: RecordLineInfo::new(csv::ByteRecord::new(), 42),
+                                        field_indices: HashSet::from_iter(1usize..4),
+                                    })
+                                }
+                            }
+                        });
+                        std::mem::swap(&mut intermediate_left_map, &mut csv_records_left_map);
+                    }
                 }
             }
         }
