@@ -345,9 +345,17 @@ impl CsvDiff {
             csv::Reader::from_reader(std::io::Cursor::new(csv_left_clone)), //receiver_csv_reader_left.recv().unwrap(),
         );
         let max_capacity_for_hash_map_right =
-            (total_lines_right / 100).max(total_lines_right) as usize;
+            if total_lines_right / 100 < total_lines_right && total_lines_right / 100 == 0 {
+                total_lines_right
+            } else {
+                total_lines_right / 100
+            } as usize;
         let max_capacity_for_hash_map_left =
-            (total_lines_left / 100).max(total_lines_left) as usize;
+            if total_lines_left / 100 < total_lines_left && total_lines_left / 100 == 0 {
+                total_lines_left
+            } else {
+                total_lines_left / 100
+            } as usize;
         let mut csv_records_right_map: HashMap<u64, HashMapValue> =
             HashMap::with_capacity(max_capacity_for_hash_map_right);
         let mut csv_records_left_map: HashMap<u64, HashMapValue> =
