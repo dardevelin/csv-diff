@@ -159,7 +159,9 @@ impl CsvDiff {
         }
     }
 
-    pub fn diff<R: Read + Clone + std::convert::AsRef<[u8]> + Send>(
+    // TODO: we have to see, whether `convert::AsRef` is a problem here
+    // maybe we instead need `Seek`
+    pub fn diff<R: Read + std::convert::AsRef<[u8]> + Send>(
         &self,
         csv_left: R,
         csv_right: R,
@@ -168,24 +170,30 @@ impl CsvDiff {
 
         let (sender_total_lines_right, receiver_total_lines_right) = channel();
         let (sender_total_lines_left, receiver_total_lines_left) = channel();
-        //let (sender_csv_reader_right, receiver_csv_reader_right) = channel();
-        //let (sender_csv_reader_left, receiver_csv_reader_left) = channel();
+        let (sender_csv_reader_right, receiver_csv_reader_right) = channel();
+        let (sender_csv_reader_left, receiver_csv_reader_left) = channel();
         let (sender_right, receiver) = channel();
         let sender_left = sender_right.clone();
-        let csv_right_clone = csv_right.clone();
-        let csv_left_clone = csv_left.clone();
         rayon::scope(move |s| {
             s.spawn(move |_s1| {
                 let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
                     CsvParserHasherSender::new(sender_left, sender_total_lines_left);
-                csv_parser_hasher
-                    .parse_and_hash::<R, CsvParseResultLeft>(csv_left, &self.primary_key_columns);
+                sender_csv_reader_left
+                    .send(csv_parser_hasher.parse_and_hash::<R, CsvParseResultLeft>(
+                        csv_left,
+                        &self.primary_key_columns,
+                    ))
+                    .unwrap();
             });
             s.spawn(move |_s2| {
                 let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
                     CsvParserHasherSender::new(sender_right, sender_total_lines_right);
-                csv_parser_hasher
-                    .parse_and_hash::<R, CsvParseResultRight>(csv_right, &self.primary_key_columns);
+                sender_csv_reader_right
+                    .send(csv_parser_hasher.parse_and_hash::<R, CsvParseResultRight>(
+                        csv_right,
+                        &self.primary_key_columns,
+                    ))
+                    .unwrap();
             });
         });
 
@@ -194,8 +202,8 @@ impl CsvDiff {
             receiver_total_lines_left.recv().unwrap(),
         );
         let (mut csv_reader_right_for_diff_seek, mut csv_reader_left_for_diff_seek) = (
-            csv::Reader::from_reader(std::io::Cursor::new(csv_right_clone)), //receiver_csv_reader_right.recv().unwrap(),
-            csv::Reader::from_reader(std::io::Cursor::new(csv_left_clone)), //receiver_csv_reader_left.recv().unwrap(),
+            receiver_csv_reader_right.recv().unwrap(),
+            receiver_csv_reader_left.recv().unwrap(),
         );
         let max_capacity_for_hash_map_right =
             if total_lines_right / 100 < total_lines_right && total_lines_right / 100 == 0 {
