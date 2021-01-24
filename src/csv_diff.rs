@@ -1,5 +1,5 @@
+use crate::csv_parser_hasher::*;
 use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
-use ahash::AHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hasher;
 use std::io::{Read, Seek};
@@ -143,23 +143,6 @@ impl CsvDiffBuilder {
     }
 }
 
-#[derive(Debug, PartialEq)]
-struct RecordHash {
-    key: u64,
-    record_hash: u64,
-    pos: Position,
-}
-
-impl RecordHash {
-    pub fn new(key: u64, record_hash: u64, pos: Position) -> Self {
-        Self {
-            key,
-            record_hash,
-            pos,
-        }
-    }
-}
-
 impl CsvDiff {
     pub fn new() -> Self {
         let mut instance = Self {
@@ -181,8 +164,7 @@ impl CsvDiff {
         csv_left: R,
         csv_right: R,
     ) -> csv::Result<DiffResult> {
-        use rayon::prelude::*;
-        use std::sync::mpsc::{channel, Receiver, Sender};
+        use std::sync::mpsc::channel;
 
         let (sender_total_lines_right, receiver_total_lines_right) = channel();
         let (sender_total_lines_left, receiver_total_lines_left) = channel();
@@ -194,145 +176,16 @@ impl CsvDiff {
         let csv_left_clone = csv_left.clone();
         rayon::scope(move |s| {
             s.spawn(move |_s1| {
-                let mut csv_reader_right = csv::Reader::from_reader(csv_right);
-                let mut csv_record_right = csv::ByteRecord::new();
-                // read first record in order to get the number of fields
-                if let Ok(true) = csv_reader_right.read_byte_record(&mut csv_record_right) {
-                    let csv_record_right_first = std::mem::take(&mut csv_record_right);
-                    let num_of_fields = csv_record_right_first.len();
-                    let fields_as_key: Vec<_> = self.primary_key_columns.iter().collect();
-                    let fields_as_value: Vec<_> = (0..num_of_fields)
-                        .filter(|x| !self.primary_key_columns.contains(x))
-                        .collect();
-
-                    let mut hasher = AHasher::default();
-                    let record = csv_record_right_first;
-                    let key_fields: Vec<_> = fields_as_key
-                        .iter()
-                        .filter_map(|k_idx| record.get(**k_idx))
-                        .collect();
-                    if !key_fields.is_empty() {
-                        for key_field in key_fields {
-                            hasher.write(key_field);
-                        }
-                        let key = hasher.finish();
-
-                        for i in fields_as_value.iter() {
-                            hasher.write(record.get(*i).unwrap());
-                        }
-                        let pos = record.position().expect("a record position");
-                        sender_right
-                            .send(CsvLeftRightParseResult::Right(RecordHash::new(
-                                key,
-                                hasher.finish(),
-                                Position::new(pos.byte(), pos.line()),
-                            )))
-                            .unwrap();
-                        let mut line = 2;
-                        while csv_reader_right
-                            .read_byte_record(&mut csv_record_right)
-                            .unwrap_or(false)
-                        {
-                            let mut hasher = AHasher::default();
-                            let key_fields = fields_as_key
-                                .iter()
-                                .filter_map(|k_idx| csv_record_right.get(**k_idx));
-                            for key_field in key_fields {
-                                hasher.write(key_field);
-                            }
-                            let key = hasher.finish();
-                            for i in fields_as_value.iter() {
-                                hasher.write(csv_record_right.get(*i).unwrap());
-                            }
-                            {
-                                let pos = csv_record_right.position().expect("a record position");
-                                sender_right
-                                    .send(CsvLeftRightParseResult::Right(RecordHash::new(
-                                        key,
-                                        hasher.finish(),
-                                        Position::new(pos.byte(), pos.line()),
-                                    )))
-                                    .unwrap();
-                            }
-                            line += 1;
-                        }
-                        sender_total_lines_right.send(line).unwrap();
-                        //sender_csv_reader_right.send(csv_reader_right).unwrap();
-                    }
-                } else {
-                    sender_total_lines_right.send(0).unwrap();
-                }
+                let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
+                    CsvParserHasherSender::new(sender_left, sender_total_lines_left);
+                csv_parser_hasher
+                    .parse_and_hash::<R, CsvParseResultLeft>(csv_left, &self.primary_key_columns);
             });
             s.spawn(move |_s2| {
-                let mut csv_reader_left = csv::Reader::from_reader(csv_left);
-                let mut csv_record_left = csv::ByteRecord::new();
-                // read first record in order to get the number of fields
-                csv_reader_left
-                    .read_byte_record(&mut csv_record_left)
-                    .expect("TODO: error handling");
-                let csv_record_left_first = std::mem::take(&mut csv_record_left);
-                let num_of_fields = csv_record_left_first.len();
-                let fields_as_key: Vec<_> = self.primary_key_columns.iter().collect();
-                let fields_as_value: Vec<_> = (0..num_of_fields)
-                    .filter(|x| !self.primary_key_columns.contains(x))
-                    .collect();
-
-                let mut hasher = AHasher::default();
-                let record = csv_record_left_first;
-                let key_fields: Vec<_> = fields_as_key
-                    .iter()
-                    .filter_map(|k_idx| record.get(**k_idx))
-                    .collect();
-                if !key_fields.is_empty() {
-                    for key_field in key_fields {
-                        hasher.write(key_field);
-                    }
-                    let key = hasher.finish();
-
-                    for i in fields_as_value.iter() {
-                        hasher.write(record.get(*i).unwrap());
-                    }
-                    let pos = record.position().expect("a record position");
-                    sender_left
-                        .send(CsvLeftRightParseResult::Left(RecordHash::new(
-                            key,
-                            hasher.finish(),
-                            Position::new(pos.byte(), pos.line()),
-                        )))
-                        .unwrap();
-                    let mut line = 2;
-                    while csv_reader_left
-                        .read_byte_record(&mut csv_record_left)
-                        .unwrap_or(false)
-                    {
-                        let mut hasher = AHasher::default();
-                        let key_fields = fields_as_key
-                            .iter()
-                            .filter_map(|k_idx| csv_record_left.get(**k_idx));
-                        for key_field in key_fields {
-                            hasher.write(key_field);
-                        }
-                        let key = hasher.finish();
-                        for i in fields_as_value.iter() {
-                            hasher.write(csv_record_left.get(*i).unwrap());
-                        }
-                        {
-                            let pos = csv_record_left.position().expect("a record position");
-                            sender_left
-                                .send(CsvLeftRightParseResult::Left(RecordHash::new(
-                                    key,
-                                    hasher.finish(),
-                                    Position::new(pos.byte(), pos.line()),
-                                )))
-                                .unwrap();
-                        }
-                        line += 1;
-                    }
-                    sender_total_lines_left.send(line).unwrap();
-                //sender_csv_reader_left.send(csv_reader_left).unwrap();
-                } else {
-                    sender_total_lines_left.send(0).unwrap();
-                }
+                let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
+                    CsvParserHasherSender::new(sender_right, sender_total_lines_right);
+                csv_parser_hasher
+                    .parse_and_hash::<R, CsvParseResultRight>(csv_right, &self.primary_key_columns);
             });
         });
 
@@ -581,47 +434,11 @@ impl CsvDiff {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-struct Position {
-    byte_offset: u64,
-    line: u64,
-}
-
-impl Position {
-    pub fn new(byte_offset: u64, line: u64) -> Self {
-        Self { byte_offset, line }
-    }
-}
-
-impl Into<csv::Position> for Position {
-    fn into(self) -> csv::Position {
-        let mut csv_pos = csv::Position::new();
-        std::mem::replace(
-            &mut csv_pos
-                .set_byte(self.byte_offset)
-                .set_line(self.line)
-                .set_record(self.line - 1),
-            csv::Position::new(),
-        )
-    }
-}
-
-enum CsvLeftRightParseResult {
-    Left(RecordHash),
-    Right(RecordHash),
-}
-
-enum HashMapValue {
-    Initial(u64, Position),
-    Equal,
-    Modified(Position, Position),
-}
-
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use pretty_assertions::{assert_eq, assert_ne};
+    use pretty_assertions::assert_eq;
     use std::iter::FromIterator;
 
     #[test]
