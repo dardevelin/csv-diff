@@ -1,9 +1,9 @@
 use ahash::AHasher;
+use crossbeam_channel::Sender;
 use std::collections::HashSet;
 use std::hash::Hasher;
 use std::io::Cursor;
 use std::io::{Read, Seek};
-use std::sync::mpsc::Sender;
 
 pub(crate) trait CsvParseResult<P, T> {
     fn new(payload_inner: T) -> Self;

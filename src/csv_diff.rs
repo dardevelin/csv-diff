@@ -166,13 +166,13 @@ impl CsvDiff {
         csv_left: R,
         csv_right: R,
     ) -> csv::Result<DiffResult> {
-        use std::sync::mpsc::channel;
+        use crossbeam_channel::unbounded;
 
-        let (sender_total_lines_right, receiver_total_lines_right) = channel();
-        let (sender_total_lines_left, receiver_total_lines_left) = channel();
-        let (sender_csv_reader_right, receiver_csv_reader_right) = channel();
-        let (sender_csv_reader_left, receiver_csv_reader_left) = channel();
-        let (sender_right, receiver) = channel();
+        let (sender_total_lines_right, receiver_total_lines_right) = unbounded();
+        let (sender_total_lines_left, receiver_total_lines_left) = unbounded();
+        let (sender_csv_reader_right, receiver_csv_reader_right) = unbounded();
+        let (sender_csv_reader_left, receiver_csv_reader_left) = unbounded();
+        let (sender_right, receiver) = unbounded();
         let sender_left = sender_right.clone();
         rayon::scope(move |s| {
             s.spawn(move |_s1| {
