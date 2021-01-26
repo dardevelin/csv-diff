@@ -1,4 +1,6 @@
+use crate::csv_hash_comparer::CsvHashComparer;
 use crate::csv_parser_hasher::*;
+use crate::diff_result::DiffResult;
 use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hasher;
@@ -9,79 +11,6 @@ use std::iter::Iterator;
 #[derive(Debug, PartialEq)]
 pub struct CsvDiff {
     primary_key_columns: HashSet<usize>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum DiffResult {
-    Equal,
-    Different { diff_records: DiffRecords },
-}
-
-impl DiffResult {
-    pub fn sort_by_line(&mut self) -> Option<&mut DiffRecords> {
-        match self {
-            Self::Different { diff_records } => {
-                diff_records.sort_by_line();
-                Some(diff_records)
-            }
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct DiffRecords(Vec<DiffRow>);
-
-impl DiffRecords {
-    pub fn sort_by_line(&mut self) {
-        self.0.sort_by(|a, b| match (a.line_num(), b.line_num()) {
-            (LineNum::OneSide(line_num_a), LineNum::OneSide(line_num_b)) => {
-                line_num_a.cmp(&line_num_b)
-            }
-            (
-                LineNum::OneSide(line_num_a),
-                LineNum::BothSides {
-                    for_deleted,
-                    for_added,
-                },
-            ) => line_num_a.cmp(if for_deleted < for_added {
-                &for_deleted
-            } else {
-                &for_added
-            }),
-            (
-                LineNum::BothSides {
-                    for_deleted,
-                    for_added,
-                },
-                LineNum::OneSide(line_num_b),
-            ) => if for_deleted < for_added {
-                &for_deleted
-            } else {
-                &for_added
-            }
-            .cmp(&line_num_b),
-            (
-                LineNum::BothSides {
-                    for_deleted: for_deleted_a,
-                    for_added: for_added_a,
-                },
-                LineNum::BothSides {
-                    for_deleted: for_deleted_b,
-                    for_added: for_added_b,
-                },
-            ) => if for_deleted_a < for_added_a {
-                &for_deleted_a
-            } else {
-                &for_added_a
-            }
-            .cmp(if for_deleted_b < for_added_b {
-                &for_deleted_b
-            } else {
-                &for_added_b
-            }),
-        })
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -201,7 +130,7 @@ impl CsvDiff {
             receiver_total_lines_right.recv().unwrap(),
             receiver_total_lines_left.recv().unwrap(),
         );
-        let (mut csv_reader_right_for_diff_seek, mut csv_reader_left_for_diff_seek) = (
+        let (csv_reader_right_for_diff_seek, csv_reader_left_for_diff_seek) = (
             receiver_csv_reader_right.recv().unwrap(),
             receiver_csv_reader_left.recv().unwrap(),
         );
@@ -217,228 +146,14 @@ impl CsvDiff {
             } else {
                 total_lines_left / 100
             } as usize;
-        let mut csv_records_right_map: HashMap<u64, HashMapValue> =
-            HashMap::with_capacity(max_capacity_for_hash_map_right);
-        let mut csv_records_left_map: HashMap<u64, HashMapValue> =
-            HashMap::with_capacity(max_capacity_for_hash_map_left);
-        let mut intermediate_left_map: HashMap<u64, HashMapValue> = HashMap::new();
-        let mut intermediate_right_map: HashMap<u64, HashMapValue> = HashMap::new();
 
-        let mut diff_records = Vec::new();
-        for record_left_right in receiver {
-            match record_left_right {
-                CsvLeftRightParseResult::Left(left_record_res) => {
-                    let pos_left = left_record_res.pos;
-                    let key = left_record_res.key;
-                    let record_hash_left = left_record_res.record_hash;
-                    match csv_records_right_map.get_mut(&key) {
-                        Some(hash_map_val) => match hash_map_val {
-                            HashMapValue::Initial(ref record_hash_right, ref pos_right) => {
-                                if record_hash_left != *record_hash_right {
-                                    *hash_map_val = HashMapValue::Modified(pos_left, *pos_right);
-                                } else {
-                                    *hash_map_val = HashMapValue::Equal;
-                                }
-                            }
-                            _ => {}
-                        },
-                        None => {
-                            csv_records_left_map
-                                .insert(key, HashMapValue::Initial(record_hash_left, pos_left));
-                        }
-                    }
-                    if max_capacity_for_hash_map_right > 0
-                        && pos_left.line % max_capacity_for_hash_map_right as u64 == 0
-                    {
-                        csv_records_right_map.drain().for_each(|(k, v)| {
-                            match v {
-                                HashMapValue::Equal => {
-                                    // nothing to do - will be removed
-                                }
-                                HashMapValue::Initial(_hash, _pos) => {
-                                    // put it back, because we don't know what to do with this value yet
-                                    intermediate_right_map.insert(k, v);
-                                }
-                                HashMapValue::Modified(pos_left, pos_right) => {
-                                    csv_reader_left_for_diff_seek
-                                        .seek(pos_left.into())
-                                        .expect("must find the given position");
-                                    csv_reader_right_for_diff_seek
-                                        .seek(pos_right.into())
-                                        .expect("must find the given position");
-
-                                    let mut left_byte_record = csv::ByteRecord::new();
-                                    // TODO: proper error handling (although we are safe here)
-                                    csv_reader_left_for_diff_seek
-                                        .read_byte_record(&mut left_byte_record)
-                                        .expect("can be read");
-                                    let mut right_byte_record = csv::ByteRecord::new();
-                                    // TODO: proper error handling (although we are safe here)
-                                    csv_reader_right_for_diff_seek
-                                        .read_byte_record(&mut right_byte_record)
-                                        .expect("can be read");
-
-                                    let fields_modified = left_byte_record
-                                        .iter()
-                                        .enumerate()
-                                        .zip(right_byte_record.iter())
-                                        .fold(
-                                            HashSet::new(),
-                                            |mut acc, ((idx, field_left), field_right)| {
-                                                if field_left != field_right {
-                                                    acc.insert(idx);
-                                                }
-                                                acc
-                                            },
-                                        );
-
-                                    diff_records.push(DiffRow::Modified {
-                                        added: RecordLineInfo::new(
-                                            right_byte_record,
-                                            pos_right.line,
-                                        ),
-                                        deleted: RecordLineInfo::new(
-                                            left_byte_record,
-                                            pos_left.line,
-                                        ),
-                                        field_indices: fields_modified,
-                                    });
-                                }
-                            }
-                        });
-                        std::mem::swap(&mut intermediate_right_map, &mut csv_records_right_map);
-                    }
-                }
-                CsvLeftRightParseResult::Right(right_record_res) => {
-                    let pos_right = right_record_res.pos;
-                    let key = right_record_res.key;
-                    let record_hash_right = right_record_res.record_hash;
-                    match csv_records_left_map.get_mut(&key) {
-                        Some(hash_map_val) => match hash_map_val {
-                            HashMapValue::Initial(ref record_hash_left, ref pos_left) => {
-                                if *record_hash_left != record_hash_right {
-                                    *hash_map_val = HashMapValue::Modified(*pos_left, pos_right);
-                                } else {
-                                    *hash_map_val = HashMapValue::Equal;
-                                }
-                            }
-                            _ => {}
-                        },
-                        None => {
-                            csv_records_right_map
-                                .insert(key, HashMapValue::Initial(record_hash_right, pos_right));
-                        }
-                    }
-                    if max_capacity_for_hash_map_left > 0
-                        && pos_right.line % max_capacity_for_hash_map_left as u64 == 0
-                    {
-                        csv_records_left_map.drain().for_each(|(k, v)| {
-                            match v {
-                                HashMapValue::Equal => {
-                                    // nothing to do - will be removed
-                                }
-                                HashMapValue::Initial(_hash, _pos) => {
-                                    // put it back, because we don't know what to do with this value yet
-                                    intermediate_left_map.insert(k, v);
-                                }
-                                HashMapValue::Modified(pos_left, pos_right) => {
-                                    csv_reader_left_for_diff_seek
-                                        .seek(pos_left.into())
-                                        .expect("must find the given position");
-                                    csv_reader_right_for_diff_seek
-                                        .seek(pos_right.into())
-                                        .expect("must find the given position");
-
-                                    let mut left_byte_record = csv::ByteRecord::new();
-                                    // TODO: proper error handling (although we are safe here)
-                                    csv_reader_left_for_diff_seek
-                                        .read_byte_record(&mut left_byte_record)
-                                        .expect("can be read");
-                                    let mut right_byte_record = csv::ByteRecord::new();
-                                    // TODO: proper error handling (although we are safe here)
-                                    csv_reader_right_for_diff_seek
-                                        .read_byte_record(&mut right_byte_record)
-                                        .expect("can be read");
-
-                                    let fields_modified = left_byte_record
-                                        .iter()
-                                        .enumerate()
-                                        .zip(right_byte_record.iter())
-                                        .fold(
-                                            HashSet::new(),
-                                            |mut acc, ((idx, field_left), field_right)| {
-                                                if field_left != field_right {
-                                                    acc.insert(idx);
-                                                }
-                                                acc
-                                            },
-                                        );
-
-                                    diff_records.push(DiffRow::Modified {
-                                        added: RecordLineInfo::new(
-                                            right_byte_record,
-                                            pos_right.line,
-                                        ),
-                                        deleted: RecordLineInfo::new(
-                                            left_byte_record,
-                                            pos_left.line,
-                                        ),
-                                        field_indices: fields_modified,
-                                    });
-                                }
-                            }
-                        });
-                        std::mem::swap(&mut intermediate_left_map, &mut csv_records_left_map);
-                    }
-                }
-            }
-        }
-
-        //diff_records.reserve(csv_records_left_map.map.len() + csv_records_right_map.map.len());
-
-        diff_records.extend(
-            csv_records_left_map
-                .into_iter()
-                .filter_map(|(_, v)| match v {
-                    HashMapValue::Initial(_hash, pos) => {
-                        csv_reader_left_for_diff_seek
-                            .seek(pos.into())
-                            .expect("must be found");
-                        let mut byte_record = csv::ByteRecord::new();
-                        csv_reader_left_for_diff_seek
-                            .read_byte_record(&mut byte_record)
-                            .expect("can be read");
-                        Some(DiffRow::Deleted(RecordLineInfo::new(byte_record, pos.line)))
-                    }
-                    _ => None,
-                }),
+        let mut csv_hash_comparer = CsvHashComparer::with_capacity_and_reader(
+            max_capacity_for_hash_map_left,
+            max_capacity_for_hash_map_right,
+            csv_reader_left_for_diff_seek,
+            csv_reader_right_for_diff_seek,
         );
-
-        diff_records.extend(
-            csv_records_right_map
-                .into_iter()
-                .filter_map(|(_, v)| match v {
-                    HashMapValue::Initial(_hash, pos) => {
-                        csv_reader_right_for_diff_seek
-                            .seek(pos.into())
-                            .expect("must be found");
-                        let mut byte_record = csv::ByteRecord::new();
-                        csv_reader_right_for_diff_seek
-                            .read_byte_record(&mut byte_record)
-                            .expect("can be read");
-                        Some(DiffRow::Added(RecordLineInfo::new(byte_record, pos.line)))
-                    }
-                    _ => None,
-                }),
-        );
-
-        Ok(if diff_records.is_empty() {
-            DiffResult::Equal
-        } else {
-            DiffResult::Different {
-                diff_records: DiffRecords(diff_records),
-            }
-        })
+        csv_hash_comparer.compare_csv_left_right_parse_result(receiver)
     }
 }
 
@@ -446,6 +161,7 @@ impl CsvDiff {
 mod tests {
 
     use super::*;
+    use crate::diff_result::*;
     use pretty_assertions::assert_eq;
     use std::iter::FromIterator;
 

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum DiffRow {
+pub enum DiffRow {
     Added(RecordLineInfo),
     Modified {
         deleted: RecordLineInfo,
@@ -23,13 +23,13 @@ impl DiffRow {
     }
 }
 
-pub(crate) enum LineNum {
+pub enum LineNum {
     OneSide(u64),
     BothSides { for_deleted: u64, for_added: u64 },
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct RecordLineInfo {
+pub struct RecordLineInfo {
     byte_record: csv::ByteRecord,
     line: u64,
 }
