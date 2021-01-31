@@ -83,14 +83,13 @@ impl<CsvLeftRightParseResult> CsvParserHasherSender<CsvLeftRightParseResult> {
                 .filter_map(|k_idx| record.get(**k_idx))
                 .collect();
             if !key_fields.is_empty() {
+                // TODO: try to do it with as few calls to `write` as possible (see below)
                 for key_field in key_fields {
                     hasher.write(key_field);
                 }
                 let key = hasher.finish();
-
-                for i in fields_as_value.iter() {
-                    hasher.write(record.get(*i).unwrap());
-                }
+                // TODO: don't hash all of it -> exclude the key fields (see below)
+                hasher.write(record.as_slice());
                 let pos = record.position().expect("a record position");
                 self.sender
                     .send(
@@ -111,13 +110,15 @@ impl<CsvLeftRightParseResult> CsvParserHasherSender<CsvLeftRightParseResult> {
                     let key_fields = fields_as_key
                         .iter()
                         .filter_map(|k_idx| csv_record.get(**k_idx));
+                    // TODO: try to do it with as few calls to `write` as possible (see below)
                     for key_field in key_fields {
                         hasher.write(key_field);
                     }
                     let key = hasher.finish();
-                    for i in fields_as_value.iter() {
-                        hasher.write(csv_record.get(*i).unwrap());
-                    }
+                    // TODO: don't hash all of it -> exclude the key fields
+                    // in order to still be efficient and do as few `write` calls as possible
+                    // consider using `csv_record.range(...)` method
+                    hasher.write(csv_record.as_slice());
                     {
                         let pos = csv_record.position().expect("a record position");
                         self.sender
