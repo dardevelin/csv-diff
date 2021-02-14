@@ -166,6 +166,32 @@ mod tests {
     use std::iter::FromIterator;
 
     #[test]
+    fn diff_empty_no_diff() {
+        let csv_left = "";
+        let csv_right = "";
+
+        let diff_res_actual = CsvDiff::new()
+            .diff(csv_left.as_bytes(), csv_right.as_bytes())
+            .unwrap();
+        let diff_res_expected = DiffResult::Equal;
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_empty_with_header_no_diff() {
+        let csv_left = "header1,header2,header3";
+        let csv_right = "header1,header2,header3";
+
+        let diff_res_actual = CsvDiff::new()
+            .diff(csv_left.as_bytes(), csv_right.as_bytes())
+            .unwrap();
+        let diff_res_expected = DiffResult::Equal;
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
     fn diff_one_line_with_header_no_diff() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -195,6 +221,29 @@ mod tests {
             .diff(csv_left.as_bytes(), csv_right.as_bytes())
             .unwrap();
         let diff_res_expected = DiffResult::Equal;
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+    }
+
+    #[test]
+    fn diff_one_line_with_header_crazy_characters_modified() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        ༼,౪,༽";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        ༼,౪,༼";
+
+        let diff_res_actual = CsvDiff::new()
+            .diff(csv_left.as_bytes(), csv_right.as_bytes())
+            .unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: DiffRecords(vec![DiffRow::Modified {
+                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["༼", "౪", "༽"]), 2),
+                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["༼", "౪", "༼"]), 2),
+                field_indices: HashSet::from_iter(vec![2]),
+            }]),
+        };
 
         assert_eq!(diff_res_actual, diff_res_expected);
     }
