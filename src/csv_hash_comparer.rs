@@ -1,5 +1,6 @@
 use crate::csv_parser_hasher::CsvLeftRightParseResult;
 use crate::csv_parser_hasher::HashMapValue;
+use crate::csv_parser_hasher::StackVec;
 use crate::diff_result::*;
 use crate::diff_row::*;
 use std::collections::{HashMap, HashSet};
@@ -45,9 +46,9 @@ impl<R: Read + std::convert::AsRef<[u8]>> CsvHashComparer<R> {
 
     pub fn compare_csv_left_right_parse_result(
         &mut self,
-        csv_left_right_parse_results: impl IntoIterator<Item = CsvLeftRightParseResult>,
+        csv_left_right_parse_results: impl IntoIterator<Item = StackVec<CsvLeftRightParseResult>>,
     ) -> csv::Result<DiffResult> {
-        for csv_left_right_parse_result in csv_left_right_parse_results {
+        for csv_left_right_parse_result in csv_left_right_parse_results.into_iter().flatten() {
             match csv_left_right_parse_result {
                 CsvLeftRightParseResult::Left(left_record_res) => {
                     let pos_left = left_record_res.pos;

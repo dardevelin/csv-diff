@@ -44,14 +44,20 @@ impl CsvParseResult<CsvLeftRightParseResult, RecordHash> for CsvParseResultRight
     }
 }
 
+pub(crate) const STACK_SIZE_VEC: usize = 32;
+pub(crate) type StackVec<T> = smallvec::SmallVec<[T; STACK_SIZE_VEC]>;
+
 // TODO: there will probably also one without a sender
 pub(crate) struct CsvParserHasherSender<T> {
-    sender: Sender<T>,
+    sender: Sender<StackVec<T>>,
     sender_total_lines: Sender<u64>,
 }
 
-impl<CsvLeftRightParseResult> CsvParserHasherSender<CsvLeftRightParseResult> {
-    pub fn new(sender: Sender<CsvLeftRightParseResult>, sender_total_lines: Sender<u64>) -> Self {
+impl CsvParserHasherSender<CsvLeftRightParseResult> {
+    pub fn new(
+        sender: Sender<StackVec<CsvLeftRightParseResult>>,
+        sender_total_lines: Sender<u64>,
+    ) -> Self {
         Self {
             sender,
             sender_total_lines,
@@ -76,6 +82,8 @@ impl<CsvLeftRightParseResult> CsvParserHasherSender<CsvLeftRightParseResult> {
                 .filter(|x| !primary_key_columns.contains(x))
                 .collect();
 
+            let mut records_buff: StackVec<CsvLeftRightParseResult> = smallvec::SmallVec::new();
+
             let mut hasher = AHasher::default();
             let record = csv_record_right_first;
             let key_fields: Vec<_> = fields_as_key
@@ -91,16 +99,14 @@ impl<CsvLeftRightParseResult> CsvParserHasherSender<CsvLeftRightParseResult> {
                 // TODO: don't hash all of it -> exclude the key fields (see below)
                 hasher.write(record.as_slice());
                 let pos = record.position().expect("a record position");
-                self.sender
-                    .send(
-                        T::new(RecordHash::new(
-                            key,
-                            hasher.finish(),
-                            Position::new(pos.byte(), pos.line()),
-                        ))
-                        .into_payload(),
-                    )
-                    .unwrap();
+                records_buff.push(
+                    T::new(RecordHash::new(
+                        key,
+                        hasher.finish(),
+                        Position::new(pos.byte(), pos.line()),
+                    ))
+                    .into_payload(),
+                );
                 let mut line = 2;
                 while csv_reader
                     .read_byte_record(&mut csv_record)
@@ -121,18 +127,27 @@ impl<CsvLeftRightParseResult> CsvParserHasherSender<CsvLeftRightParseResult> {
                     hasher.write(csv_record.as_slice());
                     {
                         let pos = csv_record.position().expect("a record position");
-                        self.sender
-                            .send(
-                                T::new(RecordHash::new(
-                                    key,
-                                    hasher.finish(),
-                                    Position::new(pos.byte(), pos.line()),
-                                ))
-                                .into_payload(),
-                            )
-                            .unwrap();
+                        records_buff.push(
+                            T::new(RecordHash::new(
+                                key,
+                                hasher.finish(),
+                                Position::new(pos.byte(), pos.line()),
+                            ))
+                            .into_payload(),
+                        );
+                        if line % STACK_SIZE_VEC as u64 == 0 {
+                            let records_buff_full: StackVec<CsvLeftRightParseResult> =
+                                smallvec::SmallVec::from_slice(records_buff.as_slice());
+                            self.sender.send(records_buff_full).unwrap();
+                            records_buff.clear();
+                        }
                     }
                     line += 1;
+                }
+                // if our buffer has elements that have not been send over yet (our buffer is only partly filled),
+                // we send them over now
+                if !records_buff.is_empty() {
+                    self.sender.send(records_buff).unwrap();
                 }
                 self.sender_total_lines.send(line).unwrap();
             }
@@ -143,12 +158,13 @@ impl<CsvLeftRightParseResult> CsvParserHasherSender<CsvLeftRightParseResult> {
     }
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub(crate) enum CsvLeftRightParseResult {
     Left(RecordHash),
     Right(RecordHash),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub(crate) struct RecordHash {
     pub key: u64,
     pub record_hash: u64,
