@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use csv_diff::csv_diff;
-use std::fmt::Display;
+use std::{fmt::Display, io::Cursor};
 use utils::csv_generator::CsvGenerator;
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -41,8 +41,11 @@ fn criterion_benchmark(c: &mut Criterion) {
             |b, (csv_left, csv_right)| {
                 b.iter(|| {
                     csv_diff
-                        .diff(csv_left.as_slice(), csv_left.as_slice())
-                        .unwrap()
+                        .diff(
+                            Cursor::new(csv_left.as_slice()),
+                            Cursor::new(csv_left.as_slice()),
+                        )
+                        .unwrap();
                 });
             },
         );
