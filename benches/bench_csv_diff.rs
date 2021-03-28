@@ -13,14 +13,14 @@ fn criterion_benchmark(c: &mut Criterion) {
         (CsvGenerator::new(4, 10), CsvGenerator::new(4, 10)),
         (CsvGenerator::new(4, 100), CsvGenerator::new(4, 100)),
         (CsvGenerator::new(4, 1000), CsvGenerator::new(4, 1000)),
-        (CsvGenerator::new(10, 3), CsvGenerator::new(10, 3)),
-        (CsvGenerator::new(100, 3), CsvGenerator::new(100, 3)),
-        (CsvGenerator::new(1000, 3), CsvGenerator::new(1000, 3)),
-        (CsvGenerator::new(10_000, 3), CsvGenerator::new(10_000, 3)),
-        (CsvGenerator::new(100_000, 3), CsvGenerator::new(100_000, 3)),
+        (CsvGenerator::new(10, 9), CsvGenerator::new(10, 9)),
+        (CsvGenerator::new(100, 9), CsvGenerator::new(100, 9)),
+        (CsvGenerator::new(1000, 9), CsvGenerator::new(1000, 9)),
+        (CsvGenerator::new(10_000, 9), CsvGenerator::new(10_000, 9)),
+        (CsvGenerator::new(100_000, 9), CsvGenerator::new(100_000, 9)),
         (
-            CsvGenerator::new(1_000_000, 3),
-            CsvGenerator::new(1_000_000, 3),
+            CsvGenerator::new(1_000_000, 9),
+            CsvGenerator::new(1_000_000, 9),
         ),
     ] {
         let (csv_left, csv_right) = (csv_gen_left.generate(), csv_gen_right.generate());
