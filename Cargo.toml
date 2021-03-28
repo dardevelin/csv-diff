@@ -8,6 +8,16 @@ edition = "2018"
 
 [dependencies]
 csv = "1.1"
+rayon = "1.5"
+ahash = "0.6.2"
+crossbeam-channel = "0.5"
+smallvec = "1.6.1"
 
 [dev-dependencies]
 pretty_assertions = "0.6.1"
+criterion = "0.3"
+utils = { path = "benches/utils" }
+
+[[bench]]
+name = "bench_csv_diff"
+harness = false
