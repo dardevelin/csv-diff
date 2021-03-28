@@ -64,14 +64,14 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
         }
     }
     pub fn parse_and_hash<
-        R: Read + Seek,
+        R: Read + std::convert::AsRef<[u8]>,
         T: CsvParseResult<CsvLeftRightParseResult, RecordHash>,
     >(
         &mut self,
         csv: R,
         primary_key_columns: &HashSet<usize>,
-    ) -> csv::Reader<R> {
-        let mut csv_reader = csv::Reader::from_reader(csv);
+    ) -> csv::Reader<Cursor<R>> {
+        let mut csv_reader = csv::Reader::from_reader(Cursor::new(csv));
         let mut csv_record = csv::ByteRecord::new();
         // read first record in order to get the number of fields
         if let Ok(true) = csv_reader.read_byte_record(&mut csv_record) {

@@ -9,7 +9,7 @@ use std::iter::FromIterator;
 use std::iter::Iterator;
 
 #[derive(Debug, PartialEq)]
-pub struct CsvDiffSeek {
+pub struct CsvDiff {
     primary_key_columns: HashSet<usize>,
 }
 
@@ -65,14 +65,14 @@ impl CsvDiffBuilder {
             ..self
         }
     }
-    pub fn build(self) -> CsvDiffSeek {
-        CsvDiffSeek {
+    pub fn build(self) -> CsvDiff {
+        CsvDiff {
             primary_key_columns: self.primary_key_columns,
         }
     }
 }
 
-impl CsvDiffSeek {
+impl CsvDiff {
     pub fn new() -> Self {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
@@ -87,19 +87,14 @@ impl CsvDiffSeek {
             primary_key_columns: HashSet::new(),
         }
     }
-}
 
-trait CsvDiffable<R: Read> {
-    fn diff(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult>;
-}
-
-impl<R: Read + Seek + Send> CsvDiffable<R> for CsvDiffSeek
-// where
-//     R: Read + Seek + Send,
-{
     // TODO: we have to see, whether `convert::AsRef` is a problem here
     // maybe we instead need `Seek`
-    fn diff(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult> {
+    pub fn diff<R: Read + std::convert::AsRef<[u8]> + Send>(
+        &self,
+        csv_left: R,
+        csv_right: R,
+    ) -> csv::Result<DiffResult> {
         use crossbeam_channel::unbounded;
 
         let (sender_total_lines_right, receiver_total_lines_right) = unbounded();
@@ -113,7 +108,7 @@ impl<R: Read + Seek + Send> CsvDiffable<R> for CsvDiffSeek
                 let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
                     CsvParserHasherSender::new(sender_left, sender_total_lines_left);
                 sender_csv_reader_left
-                    .send(csv_parser_hasher.parse_and_hash::<_, CsvParseResultLeft>(
+                    .send(csv_parser_hasher.parse_and_hash::<R, CsvParseResultLeft>(
                         csv_left,
                         &self.primary_key_columns,
                     ))
