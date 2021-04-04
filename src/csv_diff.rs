@@ -78,7 +78,6 @@ impl CsvDiff {
             primary_key_columns: HashSet::new(),
         };
         instance.primary_key_columns.insert(0);
-        // TODO: when more than one primary key column is specified, we have to sort and dedup
         instance
     }
 
