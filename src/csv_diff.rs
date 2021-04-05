@@ -2,6 +2,7 @@ use crate::csv_hash_comparer::CsvHashComparer;
 use crate::csv_parser_hasher::*;
 use crate::diff_result::DiffResult;
 use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
+use crate::thread_scope_strategy::*;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hasher;
 use std::io::{Read, Seek};
