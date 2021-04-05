@@ -4,25 +4,6 @@ pub trait ThreadScoper<S> {
         for<'a> F: FnOnce(&'a S) + Send;
 }
 
-pub trait ThreadSpawner<'scope> {
-    fn spawn<F>(&self, f: F)
-    where
-        F: FnOnce() + Send + 'scope;
-}
-
-// pub struct RayonScope<'scope> {
-//     scope: rayon::Scope<'scope>,
-// }
-
-// impl<'a> ThreadSpawner for RayonScope<'a> {
-//     fn spawn<'scope, F>(&self, f: F)
-//     where
-//         F: FnOnce() + Send + 'scope,
-//     {
-//         self.scope.spawn(|_s| f())
-//     }
-// }
-
 pub struct CrossbeamScope {}
 
 impl<'scope> ThreadScoper<crossbeam_utils::thread::Scope<'scope>> for CrossbeamScope {
@@ -31,25 +12,6 @@ impl<'scope> ThreadScoper<crossbeam_utils::thread::Scope<'scope>> for CrossbeamS
         for<'a> F: FnOnce(&'a crossbeam_utils::thread::Scope<'scope>),
     {
         crossbeam_utils::thread::scope(|s| f(s)).unwrap();
-    }
-}
-
-pub struct CrossbeamSpawner<'scope> {
-    scope: crossbeam_utils::thread::Scope<'scope>,
-}
-
-impl<'scope> ThreadSpawner<'scope> for CrossbeamSpawner<'scope> {
-    fn spawn<F>(&self, f: F)
-    where
-        F: FnOnce() + Send + 'scope,
-    {
-        self.scope.spawn(|_s| f());
-    }
-}
-
-impl<'scope> CrossbeamSpawner<'scope> {
-    fn new(scope: crossbeam_utils::thread::Scope<'scope>) -> Self {
-        Self { scope }
     }
 }
 
