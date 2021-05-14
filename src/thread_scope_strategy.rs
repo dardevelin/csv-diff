@@ -1,8 +1,7 @@
 pub trait ThreadScoper<S> {
     fn scope<F>(&self, f: F)
     where
-        //S: 'a,
-        F: FnOnce(&'_ S) + Send;
+        F: FnOnce(&S) + Send;
 }
 
 pub struct CrossbeamScope;
@@ -10,7 +9,7 @@ pub struct CrossbeamScope;
 impl<'scope> ThreadScoper<crossbeam_utils::thread::Scope<'scope>> for CrossbeamScope {
     fn scope<F>(&self, f: F)
     where
-        F: FnOnce(&'_ crossbeam_utils::thread::Scope<'scope>),
+        F: FnOnce(&crossbeam_utils::thread::Scope<'scope>),
     {
         crossbeam_utils::thread::scope(|s| f(s)).unwrap();
     }
@@ -29,7 +28,7 @@ pub struct RayonScope {
 impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope {
     fn scope<F>(&self, f: F)
     where
-        for<'a> F: FnOnce(&'a rayon::Scope<'scope>) + Send,
+        F: FnOnce(&rayon::Scope<'scope>) + Send,
     {
         self.thread_pool.scope(|s| f(s));
     }

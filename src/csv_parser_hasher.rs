@@ -159,13 +159,13 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub(crate) enum CsvLeftRightParseResult {
+pub enum CsvLeftRightParseResult {
     Left(RecordHash),
     Right(RecordHash),
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub(crate) struct RecordHash {
+pub struct RecordHash {
     pub key: u64,
     pub record_hash: u64,
     pub pos: Position,
@@ -182,7 +182,7 @@ impl RecordHash {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub(crate) struct Position {
+pub struct Position {
     pub byte_offset: u64,
     pub line: u64,
 }
