@@ -3,15 +3,22 @@ use crate::csv_parser_hasher::*;
 use crate::diff_result::DiffResult;
 use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
 use crate::thread_scope_strategy::*;
-use std::collections::{HashMap, HashSet};
+use crossbeam_channel::Sender;
+use csv::Reader;
 use std::hash::Hasher;
 use std::io::{Read, Seek};
 use std::iter::FromIterator;
 use std::iter::Iterator;
+use std::{
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+};
 
 #[derive(Debug, PartialEq)]
-pub struct CsvDiff {
+pub struct CsvDiff<S, T: ThreadScoper<S>> {
     primary_key_columns: HashSet<usize>,
+    thread_pool: T,
+    _phantom: PhantomData<S>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -55,39 +62,97 @@ impl From<KeyByteRecord<'_, '_>> for CsvRowKey {
     }
 }
 
-pub struct CsvDiffBuilder {
+pub struct CsvDiffBuilder<S, T: ThreadScoper<S>> {
     primary_key_columns: HashSet<usize>,
+    thread_pool: T,
+    _phantom: PhantomData<S>,
 }
 
-impl CsvDiffBuilder {
+impl<'a> CsvDiffBuilder<rayon::Scope<'a>, RayonScope> {
     pub fn primary_key_columns(self, columns: impl IntoIterator<Item = usize>) -> Self {
         Self {
             primary_key_columns: HashSet::from_iter(columns),
             ..self
         }
     }
-    pub fn build(self) -> CsvDiff {
+    pub fn with_thread_pool(self, thread_pool: rayon::ThreadPool) -> Self {
+        Self {
+            thread_pool: RayonScope::new(thread_pool),
+            //scope_fn,
+            ..self
+        }
+    }
+    pub fn build(self) -> CsvDiff<rayon::Scope<'a>, RayonScope> {
         CsvDiff {
             primary_key_columns: self.primary_key_columns,
+            thread_pool: self.thread_pool,
+            _phantom: Default::default(), //scope_fn: self.scope_fn,
         }
     }
 }
 
-impl CsvDiff {
+impl<'a> CsvDiff<rayon::Scope<'a>, RayonScope>
+// where
+//     'r: 'a,
+{
     pub fn new() -> Self {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
+            thread_pool: RayonScope::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+            _phantom: Default::default(),
         };
         instance.primary_key_columns.insert(0);
         instance
     }
 
-    pub fn builder() -> CsvDiffBuilder {
+    // fn scope_fn<R>(
+    //     &'a self,
+    //     sender_left: Sender<StackVec<CsvLeftRightParseResult>>,
+    //     sender_total_lines_left: Sender<u64>,
+    //     sender_csv_reader_left: Sender<Reader<R>>,
+    //     csv_left: R,
+    //     sender_right: Sender<StackVec<CsvLeftRightParseResult>>,
+    //     sender_total_lines_right: Sender<u64>,
+    //     sender_csv_reader_right: Sender<Reader<R>>,
+    //     csv_right: R,
+    // ) -> impl FnOnce(&'r rayon::Scope<'a>) + Send + 'a
+    // where
+    //     R: Read + Seek + Send + 'r,
+    // {
+    //     move |s: &'r rayon::Scope<'a>| {
+    //         s.spawn(move |_s1| {
+    //             let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
+    //                 CsvParserHasherSender::new(sender_left, sender_total_lines_left);
+    //             sender_csv_reader_left
+    //                 .send(csv_parser_hasher.parse_and_hash::<R, CsvParseResultLeft>(
+    //                     csv_left,
+    //                     &self.primary_key_columns,
+    //                 ))
+    //                 .unwrap();
+    //         });
+    //         s.spawn(move |_s2| {
+    //             let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
+    //                 CsvParserHasherSender::new(sender_right, sender_total_lines_right);
+    //             sender_csv_reader_right
+    //                 .send(csv_parser_hasher.parse_and_hash::<R, CsvParseResultRight>(
+    //                     csv_right,
+    //                     &self.primary_key_columns,
+    //                 ))
+    //                 .unwrap();
+    //         });
+    //     }
+    // }
+
+    pub fn builder() -> CsvDiffBuilder<rayon::Scope<'a>, RayonScope> {
         CsvDiffBuilder {
             primary_key_columns: HashSet::new(),
+            thread_pool: RayonScope::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+            _phantom: Default::default(),
         }
     }
 
+    //TODO: maybe rename this to `diff_then_seek`, so that we can have a `diff`
+    // method in the future that does not require `Seek`
     pub fn diff<R>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult>
     where
         R: Read + Seek + Send,
@@ -100,7 +165,8 @@ impl CsvDiff {
         let (sender_csv_reader_left, receiver_csv_reader_left) = unbounded();
         let (sender_right, receiver) = unbounded();
         let sender_left = sender_right.clone();
-        rayon::scope(move |s| {
+
+        self.thread_pool.scope(move |s| {
             s.spawn(move |_s1| {
                 let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
                     CsvParserHasherSender::new(sender_left, sender_total_lines_left);
@@ -122,6 +188,39 @@ impl CsvDiff {
                     .unwrap();
             });
         });
+        // self.thread_pool.scope(self.scope_fn(
+        //     sender_left,
+        //     sender_total_lines_left,
+        //     sender_csv_reader_left,
+        //     csv_left,
+        //     sender_right,
+        //     sender_total_lines_right,
+        //     sender_csv_reader_right,
+        //     csv_right,
+        // ));
+
+        // rayon::scope(move |s| {
+        //     s.spawn(move |_s1| {
+        //         let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
+        //             CsvParserHasherSender::new(sender_left, sender_total_lines_left);
+        //         sender_csv_reader_left
+        //             .send(csv_parser_hasher.parse_and_hash::<R, CsvParseResultLeft>(
+        //                 csv_left,
+        //                 &self.primary_key_columns,
+        //             ))
+        //             .unwrap();
+        //     });
+        //     s.spawn(move |_s2| {
+        //         let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
+        //             CsvParserHasherSender::new(sender_right, sender_total_lines_right);
+        //         sender_csv_reader_right
+        //             .send(csv_parser_hasher.parse_and_hash::<R, CsvParseResultRight>(
+        //                 csv_right,
+        //                 &self.primary_key_columns,
+        //             ))
+        //             .unwrap();
+        //     });
+        // });
 
         let (total_lines_right, total_lines_left) = (
             receiver_total_lines_right.recv().unwrap(),
