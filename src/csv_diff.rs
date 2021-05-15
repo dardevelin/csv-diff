@@ -79,28 +79,42 @@ pub trait TaskSpawner {
 
 pub struct CsvDiffBuilder<S, T: ThreadScoper<S>> {
     primary_key_columns: HashSet<usize>,
-    thread_pool: T,
+    thread_pool: Option<T>,
     _phantom: PhantomData<S>,
 }
 
-impl<'a> CsvDiffBuilder<rayon::Scope<'a>, RayonScope> {
+impl<S, T> CsvDiffBuilder<S, T>
+where
+    T: ThreadScoper<S>,
+{
+    pub fn new() -> Self {
+        Self {
+            primary_key_columns: Default::default(),
+            thread_pool: None,
+            _phantom: Default::default(),
+        }
+    }
     pub fn primary_key_columns(self, columns: impl IntoIterator<Item = usize>) -> Self {
         Self {
             primary_key_columns: HashSet::from_iter(columns),
             ..self
         }
     }
-    pub fn with_thread_pool(self, thread_pool: rayon::ThreadPool) -> Self {
-        Self {
-            thread_pool: RayonScope::new(thread_pool),
-            ..self
-        }
-    }
-    pub fn build(self) -> CsvDiff<rayon::Scope<'a>, RayonScope> {
+
+    pub fn build(self) -> CsvDiff<S, T> {
         CsvDiff {
             primary_key_columns: self.primary_key_columns,
-            thread_pool: self.thread_pool,
+            thread_pool: self.thread_pool.unwrap_or_default(),
             _phantom: Default::default(),
+        }
+    }
+}
+
+impl<'a> CsvDiffBuilder<rayon::Scope<'a>, RayonScope> {
+    pub fn with_thread_pool(self, thread_pool: rayon::ThreadPool) -> Self {
+        Self {
+            thread_pool: Some(RayonScope::new(thread_pool)),
+            ..self
         }
     }
 }
@@ -149,14 +163,6 @@ impl<'a> CsvDiff<rayon::Scope<'a>, RayonScope> {
         };
         instance.primary_key_columns.insert(0);
         instance
-    }
-
-    pub fn builder() -> CsvDiffBuilder<rayon::Scope<'a>, RayonScope> {
-        CsvDiffBuilder {
-            primary_key_columns: HashSet::new(),
-            thread_pool: RayonScope::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
-            _phantom: Default::default(),
-        }
     }
 
     //TODO: maybe rename this to `diff_then_seek`, so that we can have a `diff`
@@ -1140,7 +1146,7 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiff::builder()
+        let mut diff_res_actual = CsvDiffBuilder::new()
             .primary_key_columns(vec![0, 1])
             .build()
             .diff(

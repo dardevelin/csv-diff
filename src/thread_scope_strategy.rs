@@ -1,9 +1,10 @@
-pub trait ThreadScoper<S> {
+pub trait ThreadScoper<S>: Default {
     fn scope<F>(&self, f: F)
     where
         F: FnOnce(&S) + Send;
+    //fn build_default_thread_scoper() -> Self;
 }
-
+#[derive(Default)]
 pub struct CrossbeamScope;
 
 impl<'scope> ThreadScoper<crossbeam_utils::thread::Scope<'scope>> for CrossbeamScope {
@@ -31,6 +32,14 @@ impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope {
         F: FnOnce(&rayon::Scope<'scope>) + Send,
     {
         self.thread_pool.scope(|s| f(s));
+    }
+}
+
+impl Default for RayonScope {
+    fn default() -> Self {
+        Self {
+            thread_pool: rayon::ThreadPoolBuilder::new().build().unwrap(),
+        }
     }
 }
 
