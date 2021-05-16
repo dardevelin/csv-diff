@@ -22,6 +22,7 @@ impl CrossbeamScope {
     }
 }
 
+#[derive(Debug)]
 pub struct RayonScope {
     thread_pool: rayon::ThreadPool,
 }

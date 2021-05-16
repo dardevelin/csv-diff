@@ -5,7 +5,7 @@ use std::hash::Hasher;
 use std::io::Cursor;
 use std::io::{Read, Seek};
 
-pub(crate) trait CsvParseResult<P, T> {
+pub trait CsvParseResult<P, T> {
     fn new(payload_inner: T) -> Self;
     fn into_payload(self) -> P;
 }

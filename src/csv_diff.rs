@@ -1,9 +1,9 @@
-use crate::csv_hash_comparer::CsvHashComparer;
-use crate::csv_parser_hasher::*;
 use crate::diff_result::DiffResult;
 use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
 use crate::thread_scope_strategy::*;
-use crossbeam_channel::Sender;
+use crate::{csv_hash_comparer::CsvHashComparer, csv_hash_task_spawner::CsvHashTaskSpawner};
+use crate::{csv_hash_task_spawner::CsvHashTaskSpawnerRayon, csv_parser_hasher::*};
+use crossbeam_channel::{Receiver, Sender};
 use csv::Reader;
 use std::hash::Hasher;
 use std::io::{Read, Seek};
@@ -14,11 +14,10 @@ use std::{
     marker::PhantomData,
 };
 
-#[derive(Debug, PartialEq)]
-pub struct CsvDiff<S, T: ThreadScoper<S>> {
+#[derive(Debug)]
+pub struct CsvDiff<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
-    thread_pool: T,
-    _phantom: PhantomData<S>,
+    hash_task_spawner: CsvHashTaskSpawnerGenericOrDefault<T>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -62,36 +61,19 @@ impl From<KeyByteRecord<'_, '_>> for CsvRowKey {
     }
 }
 
-pub trait TaskSpawner {
-    fn spawn_tasks<R>(
-        &self,
-        sender_left: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines_left: Sender<u64>,
-        sender_csv_reader_left: Sender<Reader<R>>,
-        csv_left: R,
-        sender_right: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines_right: Sender<u64>,
-        sender_csv_reader_right: Sender<Reader<R>>,
-        csv_right: R,
-    ) where
-        R: Read + Seek + Send;
-}
-
-pub struct CsvDiffBuilder<S, T: ThreadScoper<S>> {
+pub struct CsvDiffBuilder<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
-    thread_pool: Option<T>,
-    _phantom: PhantomData<S>,
+    hash_task_spawner: Option<T>,
 }
 
-impl<S, T> CsvDiffBuilder<S, T>
+impl<T> CsvDiffBuilder<T>
 where
-    T: ThreadScoper<S>,
+    T: CsvHashTaskSpawner,
 {
     pub fn new() -> Self {
         Self {
             primary_key_columns: Default::default(),
-            thread_pool: None,
-            _phantom: Default::default(),
+            hash_task_spawner: None,
         }
     }
     pub fn primary_key_columns(self, columns: impl IntoIterator<Item = usize>) -> Self {
@@ -101,26 +83,41 @@ where
         }
     }
 
-    pub fn build(self) -> CsvDiff<S, T> {
+    pub fn build(self) -> CsvDiff<T> {
         CsvDiff {
             primary_key_columns: self.primary_key_columns,
-            thread_pool: self.thread_pool.unwrap_or_default(),
-            _phantom: Default::default(),
+            hash_task_spawner: self.hash_task_spawner.map_or_else(
+                || {
+                    CsvHashTaskSpawnerGenericOrDefault::Default(CsvHashTaskSpawnerRayon::new(
+                        RayonScope::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+                    ))
+                },
+                |x| CsvHashTaskSpawnerGenericOrDefault::Generic(x),
+            ),
         }
     }
 }
 
-impl<'a> CsvDiffBuilder<rayon::Scope<'a>, RayonScope> {
+impl CsvDiffBuilder<CsvHashTaskSpawnerRayon> {
     pub fn with_thread_pool(self, thread_pool: rayon::ThreadPool) -> Self {
         Self {
-            thread_pool: Some(RayonScope::new(thread_pool)),
+            hash_task_spawner: Some(CsvHashTaskSpawnerRayon::new(RayonScope::new(thread_pool))),
             ..self
         }
     }
 }
 
-impl TaskSpawner for CsvDiff<rayon::Scope<'_>, RayonScope> {
-    fn spawn_tasks<R>(
+#[derive(Debug)]
+enum CsvHashTaskSpawnerGenericOrDefault<T: CsvHashTaskSpawner> {
+    Generic(T),
+    Default(CsvHashTaskSpawnerRayon),
+}
+
+impl<T> CsvHashTaskSpawner for CsvHashTaskSpawnerGenericOrDefault<T>
+where
+    T: CsvHashTaskSpawner,
+{
+    fn spawn_hashing_tasks_and_send_result<R>(
         &self,
         sender_left: Sender<StackVec<CsvLeftRightParseResult>>,
         sender_total_lines_left: Sender<u64>,
@@ -130,40 +127,67 @@ impl TaskSpawner for CsvDiff<rayon::Scope<'_>, RayonScope> {
         sender_total_lines_right: Sender<u64>,
         sender_csv_reader_right: Sender<Reader<R>>,
         csv_right: R,
+        primary_key_columns: &HashSet<usize>,
     ) where
         R: Read + Seek + Send,
     {
-        self.thread_pool.scope(move |s| {
-            s.spawn(move |_s1| {
-                self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
-                    sender_left,
-                    sender_total_lines_left,
-                    sender_csv_reader_left,
-                    csv_left,
-                );
-            });
-            s.spawn(move |_s2| {
-                self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
-                    sender_right,
-                    sender_total_lines_right,
-                    sender_csv_reader_right,
-                    csv_right,
-                );
-            });
-        });
+        match self {
+            Self::Generic(t) => t.spawn_hashing_tasks_and_send_result(
+                sender_left,
+                sender_total_lines_left,
+                sender_csv_reader_left,
+                csv_left,
+                sender_right,
+                sender_total_lines_right,
+                sender_csv_reader_right,
+                csv_right,
+                primary_key_columns,
+            ),
+            Self::Default(default) => default.spawn_hashing_tasks_and_send_result(
+                sender_left,
+                sender_total_lines_left,
+                sender_csv_reader_left,
+                csv_left,
+                sender_right,
+                sender_total_lines_right,
+                sender_csv_reader_right,
+                csv_right,
+                primary_key_columns,
+            ),
+        }
     }
 }
 
-impl<'a> CsvDiff<rayon::Scope<'a>, RayonScope> {
+impl CsvDiff<CsvHashTaskSpawnerRayon> {
     pub fn new() -> Self {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
-            thread_pool: RayonScope::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
-            _phantom: Default::default(),
+            hash_task_spawner: CsvHashTaskSpawnerGenericOrDefault::Generic(
+                CsvHashTaskSpawnerRayon::new(RayonScope::new(
+                    rayon::ThreadPoolBuilder::new().build().unwrap(),
+                )),
+            ),
         };
         instance.primary_key_columns.insert(0);
         instance
     }
+}
+
+impl<T> CsvDiff<T>
+where
+    T: CsvHashTaskSpawner,
+{
+    // TODO: hm...not sure what to do with this one yet
+    // pub fn new() -> Self {
+    //     let mut instance = Self {
+    //         primary_key_columns: HashSet::new(),
+    //         hash_task_spawner: CsvHashTaskSpawnerRayon::new(RayonScope::new(
+    //             rayon::ThreadPoolBuilder::new().build().unwrap(),
+    //         )),
+    //     };
+    //     instance.primary_key_columns.insert(0);
+    //     instance
+    // }
 
     //TODO: maybe rename this to `diff_then_seek`, so that we can have a `diff`
     // method in the future that does not require `Seek`
@@ -180,7 +204,7 @@ impl<'a> CsvDiff<rayon::Scope<'a>, RayonScope> {
         let (sender_right, receiver) = unbounded();
         let sender_left = sender_right.clone();
 
-        self.spawn_tasks(
+        self.hash_task_spawner.spawn_hashing_tasks_and_send_result(
             sender_left,
             sender_total_lines_left,
             sender_csv_reader_left,
@@ -189,8 +213,29 @@ impl<'a> CsvDiff<rayon::Scope<'a>, RayonScope> {
             sender_total_lines_right,
             sender_csv_reader_right,
             csv_right,
+            &self.primary_key_columns,
         );
 
+        self.recv_hashes_and_compare(
+            receiver_total_lines_left,
+            receiver_total_lines_right,
+            receiver_csv_reader_left,
+            receiver_csv_reader_right,
+            receiver,
+        )
+    }
+
+    fn recv_hashes_and_compare<R>(
+        &self,
+        receiver_total_lines_left: Receiver<u64>,
+        receiver_total_lines_right: Receiver<u64>,
+        receiver_csv_reader_left: Receiver<Reader<R>>,
+        receiver_csv_reader_right: Receiver<Reader<R>>,
+        receiver: Receiver<StackVec<CsvLeftRightParseResult>>,
+    ) -> csv::Result<DiffResult>
+    where
+        R: Read + Seek + Send,
+    {
         let (total_lines_right, total_lines_left) = (
             receiver_total_lines_right.recv().unwrap(),
             receiver_total_lines_left.recv().unwrap(),
@@ -219,28 +264,6 @@ impl<'a> CsvDiff<rayon::Scope<'a>, RayonScope> {
             csv_reader_right_for_diff_seek,
         );
         csv_hash_comparer.compare_csv_left_right_parse_result(receiver)
-    }
-}
-
-impl<S, T> CsvDiff<S, T>
-where
-    T: ThreadScoper<S>,
-{
-    fn parse_hash_and_send_for_compare<R, P>(
-        &self,
-        sender: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines: Sender<u64>,
-        sender_csv_reader: Sender<Reader<R>>,
-        csv: R,
-    ) where
-        R: Read + Seek + Send,
-        P: CsvParseResult<CsvLeftRightParseResult, RecordHash>,
-    {
-        let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
-            CsvParserHasherSender::new(sender, sender_total_lines);
-        sender_csv_reader
-            .send(csv_parser_hasher.parse_and_hash::<R, P>(csv, &self.primary_key_columns))
-            .unwrap();
     }
 }
 
@@ -1146,7 +1169,7 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiffBuilder::new()
+        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new()
             .primary_key_columns(vec![0, 1])
             .build()
             .diff(

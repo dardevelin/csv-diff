@@ -1,5 +1,6 @@
 pub mod csv_diff;
 mod csv_hash_comparer;
+mod csv_hash_task_spawner;
 mod csv_parser_hasher;
 pub mod diff_result;
 mod diff_row;
