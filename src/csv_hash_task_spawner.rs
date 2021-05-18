@@ -96,3 +96,23 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon {
         });
     }
 }
+
+pub trait CsvHashTaskSpawnerBuilder<T> {
+    fn build(self) -> T;
+}
+
+pub struct CsvHashTaskSpawnerBuilderRayon {
+    thread_pool: rayon::ThreadPool,
+}
+
+impl CsvHashTaskSpawnerBuilderRayon {
+    pub fn new(thread_pool: rayon::ThreadPool) -> Self {
+        Self { thread_pool }
+    }
+}
+
+impl CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerRayon> for CsvHashTaskSpawnerBuilderRayon {
+    fn build(self) -> CsvHashTaskSpawnerRayon {
+        CsvHashTaskSpawnerRayon::new(RayonScope::new(self.thread_pool))
+    }
+}
