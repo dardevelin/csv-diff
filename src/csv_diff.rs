@@ -1,7 +1,10 @@
-use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
 use crate::thread_scope_strategy::*;
 use crate::{csv_hash_comparer::CsvHashComparer, csv_hash_task_spawner::CsvHashTaskSpawner};
 use crate::{csv_hash_task_spawner::CsvHashTaskSpawnerBuilder, diff_result::DiffResult};
+use crate::{
+    csv_hash_task_spawner::CsvHashTaskSpawnerBuilderRayon,
+    diff_row::{DiffRow, LineNum, RecordLineInfo},
+};
 use crate::{csv_hash_task_spawner::CsvHashTaskSpawnerRayon, csv_parser_hasher::*};
 use crossbeam_channel::{Receiver, Sender};
 use csv::Reader;
@@ -115,13 +118,17 @@ impl CsvDiff<CsvHashTaskSpawnerRayon> {
         instance.primary_key_columns.insert(0);
         instance
     }
+
+    pub fn with_rayon_thread_pool(thread_pool: rayon::ThreadPool) -> Self {
+        Self::with_task_spawner_builder(CsvHashTaskSpawnerBuilderRayon::new(thread_pool))
+    }
 }
 
 impl<T> CsvDiff<T>
 where
     T: CsvHashTaskSpawner,
 {
-    pub fn new_with_task_spawner_builder<B>(csv_hash_task_spawner_builder: B) -> Self
+    pub fn with_task_spawner_builder<B>(csv_hash_task_spawner_builder: B) -> Self
     where
         B: CsvHashTaskSpawnerBuilder<T>,
     {
