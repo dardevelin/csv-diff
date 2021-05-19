@@ -16,6 +16,7 @@ use std::{
     collections::{HashMap, HashSet},
     marker::PhantomData,
 };
+use thiserror::Error;
 
 #[derive(Debug)]
 pub struct CsvDiff<T: CsvHashTaskSpawner> {
@@ -64,6 +65,7 @@ impl From<KeyByteRecord<'_, '_>> for CsvRowKey {
     }
 }
 
+#[derive(Debug)]
 pub struct CsvDiffBuilder<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
     hash_task_spawner: T,
@@ -82,19 +84,27 @@ where
             hash_task_spawner: csv_hash_task_spawner_builder.build(),
         }
     }
-    pub fn primary_key_columns(self, columns: impl IntoIterator<Item = usize>) -> Self {
-        Self {
-            primary_key_columns: HashSet::from_iter(columns),
-            ..self
-        }
+    pub fn primary_key_columns(mut self, columns: impl IntoIterator<Item = usize>) -> Self {
+        self.primary_key_columns = HashSet::from_iter(columns);
+        self
     }
 
-    pub fn build(self) -> CsvDiff<T> {
-        CsvDiff {
-            primary_key_columns: self.primary_key_columns,
-            hash_task_spawner: self.hash_task_spawner,
+    pub fn build(self) -> Result<CsvDiff<T>, CsvDiffBuilderError> {
+        if !self.primary_key_columns.is_empty() {
+            Ok(CsvDiff {
+                primary_key_columns: self.primary_key_columns,
+                hash_task_spawner: self.hash_task_spawner,
+            })
+        } else {
+            Err(CsvDiffBuilderError::NoPrimaryKeyColumns)
         }
     }
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum CsvDiffBuilderError {
+    #[error("No primary key columns have been specified. You need to provide at least one column index.")]
+    NoPrimaryKeyColumns,
 }
 
 impl CsvDiff<CsvHashTaskSpawnerRayon> {
@@ -1096,7 +1106,32 @@ mod tests {
     }
 
     #[test]
-    fn diff_multiple_lines_with_header_combined_key_added_deleted_modified() {
+    fn builder_without_primary_key_columns_is_no_primary_key_columns_err() {
+        let expected = CsvDiffBuilderError::NoPrimaryKeyColumns;
+        let actual = CsvDiffBuilder::with_hash_task_spawner_builder(
+            CsvHashTaskSpawnerBuilderRayon::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+        )
+        .primary_key_columns(std::iter::empty())
+        .build();
+
+        assert!(actual.is_err());
+        assert_eq!(expected, actual.unwrap_err());
+        assert_eq!(expected.to_string(), "No primary key columns have been specified. You need to provide at least one column index.");
+    }
+
+    #[test]
+    fn builder_without_specified_primary_key_columns_is_ok() {
+        // it is ok, because it gets a sensible default value
+        assert!(CsvDiffBuilder::with_hash_task_spawner_builder(
+            CsvHashTaskSpawnerBuilderRayon::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+        )
+        .build()
+        .is_ok());
+    }
+
+    #[test]
+    fn diff_multiple_lines_with_header_combined_key_added_deleted_modified(
+    ) -> Result<(), CsvDiffBuilderError> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -1117,7 +1152,7 @@ mod tests {
                 ),
             )
             .primary_key_columns(vec![0, 1])
-            .build()
+            .build()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -1144,5 +1179,6 @@ mod tests {
         let _ = diff_res_actual.sort_by_line().unwrap();
         let _ = diff_res_expected.sort_by_line().unwrap();
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 }
