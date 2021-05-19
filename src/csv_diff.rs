@@ -66,17 +66,20 @@ impl From<KeyByteRecord<'_, '_>> for CsvRowKey {
 
 pub struct CsvDiffBuilder<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
-    hash_task_spawner: Option<T>,
+    hash_task_spawner: T,
 }
 
 impl<T> CsvDiffBuilder<T>
 where
     T: CsvHashTaskSpawner,
 {
-    pub fn new() -> Self {
+    pub fn with_hash_task_spawner_builder<B>(csv_hash_task_spawner_builder: B) -> Self
+    where
+        B: CsvHashTaskSpawnerBuilder<T>,
+    {
         Self {
-            primary_key_columns: Default::default(),
-            hash_task_spawner: None,
+            primary_key_columns: HashSet::from_iter(std::iter::once(0)),
+            hash_task_spawner: csv_hash_task_spawner_builder.build(),
         }
     }
     pub fn primary_key_columns(self, columns: impl IntoIterator<Item = usize>) -> Self {
@@ -86,24 +89,11 @@ where
         }
     }
 
-    pub fn hash_task_spawner_builder<B>(self, csv_hash_task_spawner_builder: B) -> Self
-    where
-        B: CsvHashTaskSpawnerBuilder<T>,
-    {
-        Self {
-            hash_task_spawner: Some(csv_hash_task_spawner_builder.build()),
-            ..self
+    pub fn build(self) -> CsvDiff<T> {
+        CsvDiff {
+            primary_key_columns: self.primary_key_columns,
+            hash_task_spawner: self.hash_task_spawner,
         }
-    }
-
-    pub fn build(self) -> Result<CsvDiff<T>, String> {
-        let hts = self.hash_task_spawner;
-        let pkc = self.primary_key_columns;
-        hts.map(|hts| CsvDiff {
-            primary_key_columns: pkc,
-            hash_task_spawner: hts,
-        })
-        .ok_or_else(|| "Please provide a hash_task_builder.".into())
     }
 }
 
@@ -1120,13 +1110,14 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new()
+        let mut diff_res_actual =
+            CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::with_hash_task_spawner_builder(
+                CsvHashTaskSpawnerBuilderRayon::new(
+                    rayon::ThreadPoolBuilder::new().build().unwrap(),
+                ),
+            )
             .primary_key_columns(vec![0, 1])
-            .hash_task_spawner_builder(CsvHashTaskSpawnerBuilderRayon::new(
-                rayon::ThreadPoolBuilder::new().build().unwrap(),
-            ))
             .build()
-            .unwrap()
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
