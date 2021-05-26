@@ -7,9 +7,9 @@ pub enum DiffResult {
 }
 
 impl DiffResult {
-    pub fn sort_by_line(&mut self) -> Option<&mut DiffRecords> {
+    pub fn sort_by_line(self) -> Option<DiffRecords> {
         match self {
-            Self::Different { diff_records } => {
+            Self::Different { mut diff_records } => {
                 diff_records.sort_by_line();
                 Some(diff_records)
             }

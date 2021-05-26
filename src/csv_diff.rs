@@ -850,9 +850,9 @@ mod tests {
                 )),
             ]),
         };
-        let _ = diff_res_actual.sort_by_line().unwrap();
-        let _ = diff_res_expected.sort_by_line().unwrap();
-        assert_eq!(diff_res_actual, diff_res_expected);
+        let diff_actual = diff_res_actual.sort_by_line();
+        let diff_expected = diff_res_expected.sort_by_line();
+        assert_eq!(diff_actual, diff_expected);
     }
 
     #[test]
@@ -887,9 +887,9 @@ mod tests {
             ]),
         };
 
-        let _ = diff_res_actual.sort_by_line().unwrap();
-        let _ = diff_res_expected.sort_by_line().unwrap();
-        assert_eq!(diff_res_actual, diff_res_expected);
+        let diff_actual = diff_res_actual.sort_by_line();
+        let diff_expected = diff_res_expected.sort_by_line();
+        assert_eq!(diff_actual, diff_expected);
     }
 
     #[test]
@@ -929,9 +929,9 @@ mod tests {
             ]),
         };
 
-        let _ = diff_res_actual.sort_by_line().unwrap();
-        let _ = diff_res_expected.sort_by_line().unwrap();
-        assert_eq!(diff_res_actual, diff_res_expected);
+        let diff_actual = diff_res_actual.sort_by_line();
+        let diff_expected = diff_res_expected.sort_by_line();
+        assert_eq!(diff_actual, diff_expected);
     }
 
     #[test]
@@ -968,9 +968,9 @@ mod tests {
             ]),
         };
 
-        let _ = diff_res_actual.sort_by_line().unwrap();
-        let _ = diff_res_expected.sort_by_line().unwrap();
-        assert_eq!(diff_res_actual, diff_res_expected);
+        let diff_actual = diff_res_actual.sort_by_line();
+        let diff_expected = diff_res_expected.sort_by_line();
+        assert_eq!(diff_actual, diff_expected);
     }
 
     #[test]
@@ -1003,9 +1003,9 @@ mod tests {
             ]),
         };
 
-        let _ = diff_res_actual.sort_by_line().unwrap();
-        let _ = diff_res_expected.sort_by_line().unwrap();
-        assert_eq!(diff_res_actual, diff_res_expected);
+        let diff_actual = diff_res_actual.sort_by_line();
+        let diff_expected = diff_res_expected.sort_by_line();
+        assert_eq!(diff_actual, diff_expected);
     }
 
     #[test]
@@ -1042,9 +1042,9 @@ mod tests {
             ]),
         };
 
-        let _ = diff_res_actual.sort_by_line().unwrap();
-        let _ = diff_res_expected.sort_by_line().unwrap();
-        assert_eq!(diff_res_actual, diff_res_expected);
+        let diff_actual = diff_res_actual.sort_by_line();
+        let diff_expected = diff_res_expected.sort_by_line();
+        assert_eq!(diff_actual, diff_expected);
     }
 
     #[test]
@@ -1101,9 +1101,9 @@ mod tests {
             ]),
         };
 
-        let _ = diff_res_actual.sort_by_line().unwrap();
-        let _ = diff_res_expected.sort_by_line().unwrap();
-        assert_eq!(diff_res_actual, diff_res_expected);
+        let diff_actual = diff_res_actual.sort_by_line();
+        let diff_expected = diff_res_expected.sort_by_line();
+        assert_eq!(diff_actual, diff_expected);
     }
 
     #[test]
@@ -1174,9 +1174,9 @@ mod tests {
             ]),
         };
 
-        let _ = diff_res_actual.sort_by_line().unwrap();
-        let _ = diff_res_expected.sort_by_line().unwrap();
-        assert_eq!(diff_res_actual, diff_res_expected);
+        let diff_actual = diff_res_actual.sort_by_line();
+        let diff_expected = diff_res_expected.sort_by_line();
+        assert_eq!(diff_actual, diff_expected);
         Ok(())
     }
 }
