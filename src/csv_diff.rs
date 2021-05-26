@@ -75,7 +75,7 @@ impl<T> CsvDiffBuilder<T>
 where
     T: CsvHashTaskSpawner,
 {
-    pub fn with_hash_task_spawner_builder<B>(csv_hash_task_spawner_builder: B) -> Self
+    pub fn new<B>(csv_hash_task_spawner_builder: B) -> Self
     where
         B: CsvHashTaskSpawnerBuilder<T>,
     {
@@ -84,6 +84,7 @@ where
             hash_task_spawner: csv_hash_task_spawner_builder.build(),
         }
     }
+
     pub fn primary_key_columns(mut self, columns: impl IntoIterator<Item = usize>) -> Self {
         self.primary_key_columns = HashSet::from_iter(columns);
         self
@@ -1108,9 +1109,9 @@ mod tests {
     #[test]
     fn builder_without_primary_key_columns_is_no_primary_key_columns_err() {
         let expected = CsvDiffBuilderError::NoPrimaryKeyColumns;
-        let actual = CsvDiffBuilder::with_hash_task_spawner_builder(
-            CsvHashTaskSpawnerBuilderRayon::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
-        )
+        let actual = CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
+            rayon::ThreadPoolBuilder::new().build().unwrap(),
+        ))
         .primary_key_columns(std::iter::empty())
         .build();
 
@@ -1122,9 +1123,9 @@ mod tests {
     #[test]
     fn builder_without_specified_primary_key_columns_is_ok() {
         // it is ok, because it gets a sensible default value
-        assert!(CsvDiffBuilder::with_hash_task_spawner_builder(
-            CsvHashTaskSpawnerBuilderRayon::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
-        )
+        assert!(CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
+            rayon::ThreadPoolBuilder::new().build().unwrap()
+        ),)
         .build()
         .is_ok());
     }
@@ -1145,19 +1146,16 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual =
-            CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::with_hash_task_spawner_builder(
-                CsvHashTaskSpawnerBuilderRayon::new(
-                    rayon::ThreadPoolBuilder::new().build().unwrap(),
-                ),
-            )
-            .primary_key_columns(vec![0, 1])
-            .build()?
-            .diff(
-                Cursor::new(csv_left.as_bytes()),
-                Cursor::new(csv_right.as_bytes()),
-            )
-            .unwrap();
+        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new(
+            CsvHashTaskSpawnerBuilderRayon::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+        )
+        .primary_key_columns(vec![0, 1])
+        .build()?
+        .diff(
+            Cursor::new(csv_left.as_bytes()),
+            Cursor::new(csv_right.as_bytes()),
+        )
+        .unwrap();
         let mut diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Modified {
