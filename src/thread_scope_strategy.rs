@@ -2,11 +2,12 @@ pub trait ThreadScoper<S>: Default {
     fn scope<F>(&self, f: F)
     where
         F: FnOnce(&S) + Send;
-    //fn build_default_thread_scoper() -> Self;
 }
-#[derive(Default)]
+#[derive(Debug, Default)]
+#[cfg(feature = "crossbeam-utils")]
 pub struct CrossbeamScope;
 
+#[cfg(feature = "crossbeam-utils")]
 impl<'scope> ThreadScoper<crossbeam_utils::thread::Scope<'scope>> for CrossbeamScope {
     fn scope<F>(&self, f: F)
     where
@@ -16,6 +17,7 @@ impl<'scope> ThreadScoper<crossbeam_utils::thread::Scope<'scope>> for CrossbeamS
     }
 }
 
+#[cfg(feature = "crossbeam-utils")]
 impl CrossbeamScope {
     pub fn new() -> Self {
         Self
@@ -58,10 +60,13 @@ impl RayonScope {
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    #[cfg(feature = "crossbeam-utils")]
+    use super::CrossbeamScope;
     #[cfg(feature = "rayon")]
     use super::RayonScope;
-    use super::{CrossbeamScope, ThreadScoper};
+    use super::ThreadScoper;
     #[test]
+    #[cfg(feature = "crossbeam-utils")]
     fn crossbeam_scope_add_num() {
         let num = AtomicU64::new(0);
         let crossbeam_scope = CrossbeamScope::new();

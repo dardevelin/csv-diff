@@ -12,6 +12,8 @@ use crate::csv_parser_hasher::{
     CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight,
     CsvParserHasherSender, RecordHash, StackVec,
 };
+#[cfg(feature = "crossbeam-utils")]
+use crate::thread_scope_strategy::CrossbeamScope;
 #[cfg(feature = "rayon")]
 use crate::thread_scope_strategy::RayonScope;
 
@@ -101,6 +103,58 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon {
     }
 }
 
+#[derive(Debug)]
+#[cfg(feature = "crossbeam-utils")]
+pub struct CsvHashTaskSpawnerCrossbeam {
+    thread_scoper: CrossbeamScope,
+}
+
+#[cfg(feature = "crossbeam-utils")]
+impl CsvHashTaskSpawnerCrossbeam {
+    pub fn new(thread_scoper: CrossbeamScope) -> Self {
+        Self { thread_scoper }
+    }
+}
+
+#[cfg(feature = "crossbeam-utils")]
+impl CsvHashTaskSpawner for CsvHashTaskSpawnerCrossbeam {
+    fn spawn_hashing_tasks_and_send_result<R>(
+        &self,
+        sender_left: Sender<StackVec<CsvLeftRightParseResult>>,
+        sender_total_lines_left: Sender<u64>,
+        sender_csv_reader_left: Sender<Reader<R>>,
+        csv_left: R,
+        sender_right: Sender<StackVec<CsvLeftRightParseResult>>,
+        sender_total_lines_right: Sender<u64>,
+        sender_csv_reader_right: Sender<Reader<R>>,
+        csv_right: R,
+        primary_key_columns: &HashSet<usize>,
+    ) where
+        R: Read + Seek + Send,
+    {
+        self.thread_scoper.scope(move |s| {
+            s.spawn(move |_s1| {
+                self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
+                    sender_left,
+                    sender_total_lines_left,
+                    sender_csv_reader_left,
+                    csv_left,
+                    primary_key_columns,
+                );
+            });
+            s.spawn(move |_s2| {
+                self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
+                    sender_right,
+                    sender_total_lines_right,
+                    sender_csv_reader_right,
+                    csv_right,
+                    primary_key_columns,
+                );
+            });
+        });
+    }
+}
+
 pub trait CsvHashTaskSpawnerBuilder<T> {
     fn build(self) -> T;
 }
@@ -121,5 +175,22 @@ impl CsvHashTaskSpawnerBuilderRayon {
 impl CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerRayon> for CsvHashTaskSpawnerBuilderRayon {
     fn build(self) -> CsvHashTaskSpawnerRayon {
         CsvHashTaskSpawnerRayon::new(RayonScope::new(self.thread_pool))
+    }
+}
+
+#[cfg(feature = "crossbeam-utils")]
+pub struct CsvHashTaskSpawnerBuilderCrossbeam;
+
+#[cfg(feature = "crossbeam-utils")]
+impl CsvHashTaskSpawnerBuilderCrossbeam {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[cfg(feature = "crossbeam-utils")]
+impl CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerCrossbeam> for CsvHashTaskSpawnerBuilderCrossbeam {
+    fn build(self) -> CsvHashTaskSpawnerCrossbeam {
+        CsvHashTaskSpawnerCrossbeam::new(CrossbeamScope::new())
     }
 }

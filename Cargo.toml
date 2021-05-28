@@ -12,7 +12,7 @@ rayon = { version = "1.5", optional = true }
 ahash = "0.6.2"
 crossbeam-channel = "0.5"
 smallvec = "1.6.1"
-crossbeam-utils = "0.8.3"
+crossbeam-utils = { version = "0.8.3", optional = true }
 thiserror = "1.0.24"
 
 [dev-dependencies]

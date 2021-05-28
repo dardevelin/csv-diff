@@ -1,3 +1,7 @@
+#[cfg(feature = "crossbeam-utils")]
+use crate::csv_hash_task_spawner::{
+    CsvHashTaskSpawnerBuilderCrossbeam, CsvHashTaskSpawnerCrossbeam,
+};
 #[cfg(feature = "rayon")]
 use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerBuilderRayon, CsvHashTaskSpawnerRayon};
 use crate::csv_parser_hasher::*;
@@ -122,6 +126,18 @@ impl CsvDiff<CsvHashTaskSpawnerRayon> {
 
     pub fn with_rayon_thread_pool(thread_pool: rayon::ThreadPool) -> Self {
         Self::with_task_spawner_builder(CsvHashTaskSpawnerBuilderRayon::new(thread_pool))
+    }
+}
+
+#[cfg(feature = "crossbeam-utils")]
+impl CsvDiff<CsvHashTaskSpawnerCrossbeam> {
+    pub fn new() -> Self {
+        let mut instance = Self {
+            primary_key_columns: HashSet::new(),
+            hash_task_spawner: CsvHashTaskSpawnerCrossbeam::new(CrossbeamScope::new()),
+        };
+        instance.primary_key_columns.insert(0);
+        instance
     }
 }
 
@@ -1183,6 +1199,59 @@ mod tests {
 
         let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new(
             CsvHashTaskSpawnerBuilderRayon::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+        )
+        .primary_key_columns(vec![0, 1])
+        .build()?
+        .diff(
+            Cursor::new(csv_left.as_bytes()),
+            Cursor::new(csv_right.as_bytes()),
+        )
+        .unwrap();
+        let mut diff_res_expected = DiffResult::Different {
+            diff_records: DiffRecords(vec![
+                DiffRow::Modified {
+                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
+                    field_indices: HashSet::from_iter(vec![2]),
+                },
+                DiffRow::Deleted(RecordLineInfo::new(
+                    csv::ByteRecord::from(vec!["d", "e", "f"]),
+                    3,
+                )),
+                DiffRow::Added(RecordLineInfo::new(
+                    csv::ByteRecord::from(vec!["d", "f", "f"]),
+                    4,
+                )),
+            ]),
+        };
+
+        let diff_actual = diff_res_actual.sort_by_line();
+        let diff_expected = diff_res_expected.sort_by_line();
+        assert_eq!(diff_actual, diff_expected);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "crossbeam-utils")]
+    // TODO: this is our only test for the "crossbeam-utils" feature;
+    // we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-utils"
+    fn diff_multiple_lines_with_header_combined_key_added_deleted_modified(
+    ) -> Result<(), CsvDiffBuilderError> {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        g,h,i\n\
+                        m,n,o";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,x\n\
+                        g,h,i\n\
+                        d,f,f\n\
+                        m,n,o";
+
+        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerCrossbeam>::new(
+            CsvHashTaskSpawnerBuilderCrossbeam::new(),
         )
         .primary_key_columns(vec![0, 1])
         .build()?
