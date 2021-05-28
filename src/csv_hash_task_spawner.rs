@@ -6,13 +6,14 @@ use std::{
 use crossbeam_channel::Sender;
 use csv::Reader;
 
-use crate::{
-    csv_parser_hasher::{
-        CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight,
-        CsvParserHasherSender, RecordHash, StackVec,
-    },
-    thread_scope_strategy::{RayonScope, ThreadScoper},
+use crate::thread_scope_strategy::ThreadScoper;
+
+use crate::csv_parser_hasher::{
+    CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight,
+    CsvParserHasherSender, RecordHash, StackVec,
 };
+#[cfg(feature = "rayon")]
+use crate::thread_scope_strategy::RayonScope;
 
 pub trait CsvHashTaskSpawner {
     fn spawn_hashing_tasks_and_send_result<R>(
@@ -49,16 +50,19 @@ pub trait CsvHashTaskSpawner {
 }
 
 #[derive(Debug)]
+#[cfg(feature = "rayon")]
 pub struct CsvHashTaskSpawnerRayon {
     thread_scoper: RayonScope,
 }
 
+#[cfg(feature = "rayon")]
 impl CsvHashTaskSpawnerRayon {
     pub fn new(thread_scoper: RayonScope) -> Self {
         Self { thread_scoper }
     }
 }
 
+#[cfg(feature = "rayon")]
 impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon {
     fn spawn_hashing_tasks_and_send_result<R>(
         &self,
@@ -101,16 +105,19 @@ pub trait CsvHashTaskSpawnerBuilder<T> {
     fn build(self) -> T;
 }
 
+#[cfg(feature = "rayon")]
 pub struct CsvHashTaskSpawnerBuilderRayon {
     thread_pool: rayon::ThreadPool,
 }
 
+#[cfg(feature = "rayon")]
 impl CsvHashTaskSpawnerBuilderRayon {
     pub fn new(thread_pool: rayon::ThreadPool) -> Self {
         Self { thread_pool }
     }
 }
 
+#[cfg(feature = "rayon")]
 impl CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerRayon> for CsvHashTaskSpawnerBuilderRayon {
     fn build(self) -> CsvHashTaskSpawnerRayon {
         CsvHashTaskSpawnerRayon::new(RayonScope::new(self.thread_pool))

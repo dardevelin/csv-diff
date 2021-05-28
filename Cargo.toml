@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 csv = "1.1"
-rayon = "1.5"
+rayon = { version = "1.5", optional = true }
 ahash = "0.6.2"
 crossbeam-channel = "0.5"
 smallvec = "1.6.1"
@@ -22,4 +22,5 @@ utils = { path = "benches/utils" }
 
 [[bench]]
 name = "bench_csv_diff"
+required-features = ["rayon"]
 harness = false

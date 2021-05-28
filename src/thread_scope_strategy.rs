@@ -23,10 +23,12 @@ impl CrossbeamScope {
 }
 
 #[derive(Debug)]
+#[cfg(feature = "rayon")]
 pub struct RayonScope {
     thread_pool: rayon::ThreadPool,
 }
 
+#[cfg(feature = "rayon")]
 impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope {
     fn scope<F>(&self, f: F)
     where
@@ -36,6 +38,7 @@ impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope {
     }
 }
 
+#[cfg(feature = "rayon")]
 impl Default for RayonScope {
     fn default() -> Self {
         Self {
@@ -44,6 +47,7 @@ impl Default for RayonScope {
     }
 }
 
+#[cfg(feature = "rayon")]
 impl RayonScope {
     pub fn new(thread_pool: rayon::ThreadPool) -> Self {
         Self { thread_pool }
@@ -54,7 +58,9 @@ impl RayonScope {
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use super::{CrossbeamScope, RayonScope, ThreadScoper};
+    #[cfg(feature = "rayon")]
+    use super::RayonScope;
+    use super::{CrossbeamScope, ThreadScoper};
     #[test]
     fn crossbeam_scope_add_num() {
         let num = AtomicU64::new(0);
@@ -71,6 +77,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rayon")]
     fn rayon_scope_add_num() {
         let num = AtomicU64::new(0);
         let rayon_scope = RayonScope::new(rayon::ThreadPoolBuilder::new().build().unwrap());

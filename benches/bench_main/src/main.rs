@@ -1,5 +1,7 @@
 use criterion::black_box;
 use csv_diff::csv_diff::*;
+use csv_diff::diff_result::DiffRecords;
+use std::io::Cursor;
 use utils::csv_generator::*;
 
 fn main() {
@@ -14,7 +16,10 @@ fn main() {
 
     let res = black_box(
         csv_diff
-            .diff(csv_left.as_slice(), csv_left.as_slice())
+            .diff(
+                Cursor::new(csv_left.as_slice()),
+                Cursor::new(csv_left.as_slice()),
+            )
             .unwrap(),
     );
 }
