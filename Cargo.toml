@@ -20,7 +20,11 @@ pretty_assertions = "0.6.1"
 criterion = "0.3"
 utils = { path = "benches/utils" }
 
+[features]
+default = ["rayon-threads"]
+rayon-threads = ["rayon"]
+
 [[bench]]
 name = "bench_csv_diff"
-required-features = ["rayon"]
+required-features = ["rayon-threads"]
 harness = false

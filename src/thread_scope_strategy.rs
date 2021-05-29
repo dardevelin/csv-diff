@@ -25,12 +25,12 @@ impl CrossbeamScope {
 }
 
 #[derive(Debug)]
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 pub struct RayonScope {
     thread_pool: rayon::ThreadPool,
 }
 
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope {
     fn scope<F>(&self, f: F)
     where
@@ -40,7 +40,7 @@ impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope {
     }
 }
 
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 impl Default for RayonScope {
     fn default() -> Self {
         Self {
@@ -49,7 +49,7 @@ impl Default for RayonScope {
     }
 }
 
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 impl RayonScope {
     pub fn new(thread_pool: rayon::ThreadPool) -> Self {
         Self { thread_pool }
@@ -62,7 +62,7 @@ mod tests {
 
     #[cfg(feature = "crossbeam-utils")]
     use super::CrossbeamScope;
-    #[cfg(feature = "rayon")]
+    #[cfg(feature = "rayon-threads")]
     use super::RayonScope;
     use super::ThreadScoper;
     #[test]
@@ -82,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "rayon")]
+    #[cfg(feature = "rayon-threads")]
     fn rayon_scope_add_num() {
         let num = AtomicU64::new(0);
         let rayon_scope = RayonScope::new(rayon::ThreadPoolBuilder::new().build().unwrap());

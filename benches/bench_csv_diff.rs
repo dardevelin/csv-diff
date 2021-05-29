@@ -1,4 +1,4 @@
-#![cfg(feature = "rayon")]
+#![cfg(feature = "rayon-threads")]
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use csv_diff::csv_diff;

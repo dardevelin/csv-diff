@@ -14,7 +14,7 @@ use crate::csv_parser_hasher::{
 };
 #[cfg(feature = "crossbeam-utils")]
 use crate::thread_scope_strategy::CrossbeamScope;
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 use crate::thread_scope_strategy::RayonScope;
 
 pub trait CsvHashTaskSpawner {
@@ -52,19 +52,19 @@ pub trait CsvHashTaskSpawner {
 }
 
 #[derive(Debug)]
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 pub struct CsvHashTaskSpawnerRayon {
     thread_scoper: RayonScope,
 }
 
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 impl CsvHashTaskSpawnerRayon {
     pub fn new(thread_scoper: RayonScope) -> Self {
         Self { thread_scoper }
     }
 }
 
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon {
     fn spawn_hashing_tasks_and_send_result<R>(
         &self,
@@ -159,19 +159,19 @@ pub trait CsvHashTaskSpawnerBuilder<T> {
     fn build(self) -> T;
 }
 
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 pub struct CsvHashTaskSpawnerBuilderRayon {
     thread_pool: rayon::ThreadPool,
 }
 
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 impl CsvHashTaskSpawnerBuilderRayon {
     pub fn new(thread_pool: rayon::ThreadPool) -> Self {
         Self { thread_pool }
     }
 }
 
-#[cfg(feature = "rayon")]
+#[cfg(feature = "rayon-threads")]
 impl CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerRayon> for CsvHashTaskSpawnerBuilderRayon {
     fn build(self) -> CsvHashTaskSpawnerRayon {
         CsvHashTaskSpawnerRayon::new(RayonScope::new(self.thread_pool))
