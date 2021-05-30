@@ -1,0 +1,50 @@
+# This file is a template, and might need editing before it works on your project.
+# Official language image. Look for the different tagged releases at:
+# https://hub.docker.com/r/library/rust/tags/
+image: "rust:latest"
+
+stages:
+  - build
+  - test
+
+variables:
+    CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+
+cache:
+  paths:
+    - .cargo/bin
+    - .cargo/registry/index
+    - .cargo/registry/cache
+    - .cargo/git/db
+
+# Install cargo dependencies
+build:cargo:
+  stage: build
+  variables:
+    CARGO_TARPAULIN_VERSION: "0.12.2"
+  script:
+    # Install tools for code coverage report
+    - PATH=.cargo/bin:$PATH
+    - 'which cargo-tarpaulin || cargo install cargo-tarpaulin --version "$CARGO_TARPAULIN_VERSION"'
+
+
+# Optional: Pick zero or more services to be used on all builds.
+# Only needed when using a docker container to run your tests in.
+# Check out: http://docs.gitlab.com/ee/ci/docker/using_docker_images.html#what-is-a-service
+# services:
+#   - mysql:latest
+#   - redis:latest
+#   - postgres:latest
+
+# Optional: Install a C compiler, cmake and git into the container.
+# You will often need this when you (or any of your dependencies) depends on C code.
+# before_script:
+#   - apt-get update -yqq
+#   - apt-get install -yqq --no-install-recommends build-essential
+
+# Use cargo to test the project
+test:cargo:
+  script:
+    - rustc --version && cargo --version && cargo tarpaulin --version # Print version info for debugging
+    # we have to exclude .cargo folder, so we don't collect coverage from our dependencies
+    - cargo tarpaulin -v --exclude-files .cargo
