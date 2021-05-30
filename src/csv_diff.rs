@@ -1,9 +1,11 @@
+use crate::csv_hash_task_spawner::CsvHashTaskSenders;
 #[cfg(feature = "crossbeam-utils")]
 use crate::csv_hash_task_spawner::{
     CsvHashTaskSpawnerBuilderCrossbeam, CsvHashTaskSpawnerCrossbeam,
 };
 #[cfg(feature = "rayon-threads")]
 use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerBuilderRayon, CsvHashTaskSpawnerRayon};
+use crate::csv_parse_result::CsvLeftRightParseResult;
 use crate::csv_parser_hasher::*;
 use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
 use crate::thread_scope_strategy::*;
@@ -173,14 +175,18 @@ where
         let sender_left = sender_right.clone();
 
         self.hash_task_spawner.spawn_hashing_tasks_and_send_result(
-            sender_left,
-            sender_total_lines_left,
-            sender_csv_reader_left,
-            csv_left,
-            sender_right,
-            sender_total_lines_right,
-            sender_csv_reader_right,
-            csv_right,
+            CsvHashTaskSenders::new(
+                sender_left,
+                sender_total_lines_left,
+                sender_csv_reader_left,
+                csv_left,
+            ),
+            CsvHashTaskSenders::new(
+                sender_right,
+                sender_total_lines_right,
+                sender_csv_reader_right,
+                csv_right,
+            ),
             &self.primary_key_columns,
         );
 

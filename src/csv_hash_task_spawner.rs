@@ -6,47 +6,78 @@ use std::{
 use crossbeam_channel::Sender;
 use csv::Reader;
 
-use crate::thread_scope_strategy::ThreadScoper;
-
-use crate::csv_parser_hasher::{
-    CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight,
-    CsvParserHasherSender, RecordHash, StackVec,
-};
 #[cfg(feature = "crossbeam-utils")]
 use crate::thread_scope_strategy::CrossbeamScope;
 #[cfg(feature = "rayon-threads")]
 use crate::thread_scope_strategy::RayonScope;
+use crate::{
+    csv_parse_result::RecordHash, csv_parser_hasher::CsvParserHasherSender,
+    thread_scope_strategy::ThreadScoper,
+};
+use crate::{
+    csv_parse_result::{
+        CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight,
+    },
+    csv_parser_hasher::StackVec,
+};
+
+pub struct CsvHashTaskSenders<R>
+where
+    R: Read + Seek + Send,
+{
+    sender: Sender<StackVec<CsvLeftRightParseResult>>,
+    sender_total_lines: Sender<u64>,
+    sender_csv_reader: Sender<Reader<R>>,
+    csv: R,
+}
+
+impl<R> CsvHashTaskSenders<R>
+where
+    R: Read + Seek + Send,
+{
+    pub(crate) fn new(
+        sender: Sender<StackVec<CsvLeftRightParseResult>>,
+        sender_total_lines: Sender<u64>,
+        sender_csv_reader: Sender<Reader<R>>,
+        csv: R,
+    ) -> Self {
+        Self {
+            sender,
+            sender_total_lines,
+            sender_csv_reader,
+            csv,
+        }
+    }
+}
 
 pub trait CsvHashTaskSpawner {
     fn spawn_hashing_tasks_and_send_result<R>(
         &self,
-        sender_left: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines_left: Sender<u64>,
-        sender_csv_reader_left: Sender<Reader<R>>,
-        csv_left: R,
-        sender_right: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines_right: Sender<u64>,
-        sender_csv_reader_right: Sender<Reader<R>>,
-        csv_right: R,
+        csv_hash_task_senders_left: CsvHashTaskSenders<R>,
+        csv_hash_task_senders_right: CsvHashTaskSenders<R>,
         primary_key_columns: &HashSet<usize>,
     ) where
         R: Read + Seek + Send;
 
     fn parse_hash_and_send_for_compare<R, P>(
         &self,
-        sender: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines: Sender<u64>,
-        sender_csv_reader: Sender<Reader<R>>,
-        csv: R,
+        csv_hash_task_senders: CsvHashTaskSenders<R>,
         primary_key_columns: &HashSet<usize>,
     ) where
         R: Read + Seek + Send,
         P: CsvParseResult<CsvLeftRightParseResult, RecordHash>,
     {
         let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
-            CsvParserHasherSender::new(sender, sender_total_lines);
-        sender_csv_reader
-            .send(csv_parser_hasher.parse_and_hash::<R, P>(csv, &primary_key_columns))
+            CsvParserHasherSender::new(
+                csv_hash_task_senders.sender,
+                csv_hash_task_senders.sender_total_lines,
+            );
+        csv_hash_task_senders
+            .sender_csv_reader
+            .send(
+                csv_parser_hasher
+                    .parse_and_hash::<R, P>(csv_hash_task_senders.csv, &primary_key_columns),
+            )
             .unwrap();
     }
 }
@@ -68,14 +99,8 @@ impl CsvHashTaskSpawnerRayon {
 impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon {
     fn spawn_hashing_tasks_and_send_result<R>(
         &self,
-        sender_left: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines_left: Sender<u64>,
-        sender_csv_reader_left: Sender<Reader<R>>,
-        csv_left: R,
-        sender_right: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines_right: Sender<u64>,
-        sender_csv_reader_right: Sender<Reader<R>>,
-        csv_right: R,
+        csv_hash_task_senders_left: CsvHashTaskSenders<R>,
+        csv_hash_task_senders_right: CsvHashTaskSenders<R>,
         primary_key_columns: &HashSet<usize>,
     ) where
         R: Read + Seek + Send,
@@ -83,19 +108,13 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon {
         self.thread_scoper.scope(move |s| {
             s.spawn(move |_s1| {
                 self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
-                    sender_left,
-                    sender_total_lines_left,
-                    sender_csv_reader_left,
-                    csv_left,
+                    csv_hash_task_senders_left,
                     primary_key_columns,
                 );
             });
             s.spawn(move |_s2| {
                 self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
-                    sender_right,
-                    sender_total_lines_right,
-                    sender_csv_reader_right,
-                    csv_right,
+                    csv_hash_task_senders_right,
                     primary_key_columns,
                 );
             });
@@ -120,14 +139,8 @@ impl CsvHashTaskSpawnerCrossbeam {
 impl CsvHashTaskSpawner for CsvHashTaskSpawnerCrossbeam {
     fn spawn_hashing_tasks_and_send_result<R>(
         &self,
-        sender_left: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines_left: Sender<u64>,
-        sender_csv_reader_left: Sender<Reader<R>>,
-        csv_left: R,
-        sender_right: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines_right: Sender<u64>,
-        sender_csv_reader_right: Sender<Reader<R>>,
-        csv_right: R,
+        csv_hash_task_senders_left: CsvHashTaskSenders<R>,
+        csv_hash_task_senders_right: CsvHashTaskSenders<R>,
         primary_key_columns: &HashSet<usize>,
     ) where
         R: Read + Seek + Send,
@@ -135,19 +148,13 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerCrossbeam {
         self.thread_scoper.scope(move |s| {
             s.spawn(move |_s1| {
                 self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
-                    sender_left,
-                    sender_total_lines_left,
-                    sender_csv_reader_left,
-                    csv_left,
+                    csv_hash_task_senders_left,
                     primary_key_columns,
                 );
             });
             s.spawn(move |_s2| {
                 self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
-                    sender_right,
-                    sender_total_lines_right,
-                    sender_csv_reader_right,
-                    csv_right,
+                    csv_hash_task_senders_right,
                     primary_key_columns,
                 );
             });

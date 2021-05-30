@@ -1,4 +1,4 @@
-use crate::csv_parser_hasher::CsvLeftRightParseResult;
+use crate::csv_parse_result::CsvLeftRightParseResult;
 use crate::csv_parser_hasher::HashMapValue;
 use crate::csv_parser_hasher::StackVec;
 use crate::diff_result::*;
