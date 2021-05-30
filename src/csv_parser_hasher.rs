@@ -2,17 +2,12 @@ use ahash::AHasher;
 use crossbeam_channel::Sender;
 use std::collections::HashSet;
 use std::hash::Hasher;
-use std::io::Cursor;
 use std::io::{Read, Seek};
 
-pub(crate) trait CsvParseResult<P, T> {
-    fn new(payload_inner: T) -> Self;
-    fn into_payload(self) -> P;
-}
-
-pub(crate) struct CsvParseResultLeft {
-    csv_left_right_parse_result: CsvLeftRightParseResult,
-}
+use crate::csv_parse_result::{
+    CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight, Position,
+    RecordHash,
+};
 
 impl CsvParseResult<CsvLeftRightParseResult, RecordHash> for CsvParseResultLeft {
     #[inline]
@@ -25,10 +20,6 @@ impl CsvParseResult<CsvLeftRightParseResult, RecordHash> for CsvParseResultLeft 
     fn into_payload(self) -> CsvLeftRightParseResult {
         self.csv_left_right_parse_result
     }
-}
-
-pub(crate) struct CsvParseResultRight {
-    csv_left_right_parse_result: CsvLeftRightParseResult,
 }
 
 impl CsvParseResult<CsvLeftRightParseResult, RecordHash> for CsvParseResultRight {
@@ -64,14 +55,14 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
         }
     }
     pub fn parse_and_hash<
-        R: Read + std::convert::AsRef<[u8]>,
+        R: Read + Seek,
         T: CsvParseResult<CsvLeftRightParseResult, RecordHash>,
     >(
         &mut self,
         csv: R,
         primary_key_columns: &HashSet<usize>,
-    ) -> csv::Reader<Cursor<R>> {
-        let mut csv_reader = csv::Reader::from_reader(Cursor::new(csv));
+    ) -> csv::Reader<R> {
+        let mut csv_reader = csv::Reader::from_reader(csv);
         let mut csv_record = csv::ByteRecord::new();
         // read first record in order to get the number of fields
         if let Ok(true) = csv_reader.read_byte_record(&mut csv_record) {
@@ -155,54 +146,6 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
             self.sender_total_lines.send(0).unwrap();
         }
         csv_reader
-    }
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub(crate) enum CsvLeftRightParseResult {
-    Left(RecordHash),
-    Right(RecordHash),
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub(crate) struct RecordHash {
-    pub key: u64,
-    pub record_hash: u64,
-    pub pos: Position,
-}
-
-impl RecordHash {
-    pub fn new(key: u64, record_hash: u64, pos: Position) -> Self {
-        Self {
-            key,
-            record_hash,
-            pos,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub(crate) struct Position {
-    pub byte_offset: u64,
-    pub line: u64,
-}
-
-impl Position {
-    pub fn new(byte_offset: u64, line: u64) -> Self {
-        Self { byte_offset, line }
-    }
-}
-
-impl Into<csv::Position> for Position {
-    fn into(self) -> csv::Position {
-        let mut csv_pos = csv::Position::new();
-        std::mem::replace(
-            &mut csv_pos
-                .set_byte(self.byte_offset)
-                .set_line(self.line)
-                .set_record(self.line - 1),
-            csv::Position::new(),
-        )
     }
 }
 

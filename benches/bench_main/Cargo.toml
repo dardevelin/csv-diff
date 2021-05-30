@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 utils = { path = "../utils" }
-csv-diff = { path = "../.." }
+csv-diff = { path = "../..", features = ["rayon"]}
 criterion = "0.3"
 
 # add more info for perf stats
