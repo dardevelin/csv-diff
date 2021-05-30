@@ -245,8 +245,8 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::{io::Cursor, iter::FromIterator};
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_empty_no_diff() {
         let csv_left = "";
         let csv_right = "";
@@ -262,8 +262,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_empty_with_header_no_diff() {
         let csv_left = "header1,header2,header3";
         let csv_right = "header1,header2,header3";
@@ -279,8 +279,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_one_line_with_header_no_diff() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -300,8 +300,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_one_line_with_header_crazy_characters_no_diff() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -321,8 +321,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_one_line_with_header_crazy_characters_modified() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -348,8 +348,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_one_line_with_header_added_one_line() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -374,8 +374,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_one_line_with_header_deleted_one_line() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -400,8 +400,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_one_line_with_header_modified_one_field() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -427,8 +427,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_one_line_with_header_modified_all_fields() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -454,8 +454,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_no_diff() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -477,8 +477,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_different_order_no_diff() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -500,8 +500,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_added_one_line_at_start() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -529,8 +529,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_added_one_line_at_middle() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -558,8 +558,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_added_one_line_at_end() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -587,8 +587,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_deleted_one_line_at_start() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -616,8 +616,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_deleted_one_line_at_middle() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -645,8 +645,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_deleted_one_line_at_end() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -674,8 +674,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_modified_one_line_at_start() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -705,8 +705,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_modified_one_line_at_start_different_order() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -736,8 +736,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_modified_one_line_at_middle() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -767,8 +767,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_modified_one_line_at_middle_different_order() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -798,8 +798,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_modified_one_line_at_end() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -829,8 +829,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_modified_one_line_at_end_different_order() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -860,8 +860,8 @@ mod tests {
         assert_eq!(diff_res_actual, diff_res_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_added_and_deleted_same_lines() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -897,8 +897,8 @@ mod tests {
         assert_eq!(diff_actual, diff_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_added_and_deleted_different_lines() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -935,8 +935,8 @@ mod tests {
         assert_eq!(diff_actual, diff_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_added_modified_and_deleted() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -978,8 +978,8 @@ mod tests {
         assert_eq!(diff_actual, diff_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_added_multiple() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1018,8 +1018,8 @@ mod tests {
         assert_eq!(diff_actual, diff_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_deleted_multiple() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1054,8 +1054,8 @@ mod tests {
         assert_eq!(diff_actual, diff_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_modified_multiple() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1094,8 +1094,8 @@ mod tests {
         assert_eq!(diff_actual, diff_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_added_modified_deleted_multiple() {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1154,8 +1154,8 @@ mod tests {
         assert_eq!(diff_actual, diff_expected);
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn builder_without_primary_key_columns_is_no_primary_key_columns_err() {
         let expected = CsvDiffBuilderError::NoPrimaryKeyColumns;
         let actual = CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
@@ -1169,8 +1169,8 @@ mod tests {
         assert_eq!(expected.to_string(), "No primary key columns have been specified. You need to provide at least one column index.");
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn builder_without_specified_primary_key_columns_is_ok() {
         // it is ok, because it gets a sensible default value
         assert!(CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
@@ -1180,8 +1180,8 @@ mod tests {
         .is_ok());
     }
 
-    #[test]
     #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_combined_key_added_deleted_modified(
     ) -> Result<(), CsvDiffBuilderError> {
         let csv_left = "\
@@ -1231,8 +1231,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
     #[cfg(feature = "crossbeam-utils")]
+    #[test]
     // TODO: this is our only test for the "crossbeam-utils" feature;
     // we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-utils"
     fn diff_multiple_lines_with_header_combined_key_added_deleted_modified(
