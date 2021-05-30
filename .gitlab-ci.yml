@@ -46,5 +46,4 @@ build:cargo:
 test:cargo:
   script:
     - rustc --version && cargo --version && cargo tarpaulin --version # Print version info for debugging
-    # we have to exclude .cargo folder, so we don't collect coverage from our dependencies
-    - cargo tarpaulin -v --exclude-files .cargo
+    - cargo tarpaulin -v
