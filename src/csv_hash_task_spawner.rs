@@ -27,7 +27,7 @@ where
 {
     sender: Sender<StackVec<CsvLeftRightParseResult>>,
     sender_total_lines: Sender<u64>,
-    sender_csv_reader: Sender<Reader<R>>,
+    sender_csv_reader: Sender<csv::Result<Reader<R>>>,
     csv: R,
 }
 
@@ -38,7 +38,7 @@ where
     pub(crate) fn new(
         sender: Sender<StackVec<CsvLeftRightParseResult>>,
         sender_total_lines: Sender<u64>,
-        sender_csv_reader: Sender<Reader<R>>,
+        sender_csv_reader: Sender<csv::Result<Reader<R>>>,
         csv: R,
     ) -> Self {
         Self {

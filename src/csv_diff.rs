@@ -203,20 +203,20 @@ where
         &self,
         receiver_total_lines_left: Receiver<u64>,
         receiver_total_lines_right: Receiver<u64>,
-        receiver_csv_reader_left: Receiver<Reader<R>>,
-        receiver_csv_reader_right: Receiver<Reader<R>>,
+        receiver_csv_reader_left: Receiver<csv::Result<Reader<R>>>,
+        receiver_csv_reader_right: Receiver<csv::Result<Reader<R>>>,
         receiver: Receiver<StackVec<CsvLeftRightParseResult>>,
     ) -> csv::Result<DiffResult>
     where
         R: Read + Seek + Send,
     {
         let (total_lines_right, total_lines_left) = (
-            receiver_total_lines_right.recv().unwrap(),
-            receiver_total_lines_left.recv().unwrap(),
+            receiver_total_lines_right.recv().unwrap_or_default(),
+            receiver_total_lines_left.recv().unwrap_or_default(),
         );
         let (csv_reader_right_for_diff_seek, csv_reader_left_for_diff_seek) = (
-            receiver_csv_reader_right.recv().unwrap(),
-            receiver_csv_reader_left.recv().unwrap(),
+            receiver_csv_reader_right.recv().unwrap()?,
+            receiver_csv_reader_left.recv().unwrap()?,
         );
         let max_capacity_for_hash_map_right =
             if total_lines_right / 100 < total_lines_right && total_lines_right / 100 == 0 {
@@ -1235,6 +1235,70 @@ mod tests {
         let diff_expected = diff_res_expected.sort_by_line();
         assert_eq!(diff_actual, diff_expected);
         Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_one_line_with_header_error_left_has_different_num_of_fields() {
+        let csv_left = "\
+                        header1,header2,header3,header4\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,d";
+
+        let diff_res_actual = CsvDiff::new().diff(
+            Cursor::new(csv_left.as_bytes()),
+            Cursor::new(csv_right.as_bytes()),
+        );
+
+        let err_kind = diff_res_actual.map_err(|err| err.into_kind());
+        let mut pos_expected = csv::Position::new();
+        let pos_expected = pos_expected.set_byte(32).set_line(2).set_record(1);
+        match err_kind {
+            Err(csv::ErrorKind::UnequalLengths {
+                pos: Some(pos),
+                expected_len,
+                len,
+            }) => {
+                assert_eq!(pos, *pos_expected);
+                assert_eq!(expected_len, 4);
+                assert_eq!(len, 3);
+            }
+            res => panic!("match mismatch: got {:#?}", res),
+        }
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_one_line_with_header_error_right_has_different_num_of_fields() {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3,header4\n\
+                        a,b,d";
+
+        let diff_res_actual = CsvDiff::new().diff(
+            Cursor::new(csv_left.as_bytes()),
+            Cursor::new(csv_right.as_bytes()),
+        );
+
+        let err_kind = diff_res_actual.map_err(|err| err.into_kind());
+        let mut pos_expected = csv::Position::new();
+        let pos_expected = pos_expected.set_byte(32).set_line(2).set_record(1);
+        match err_kind {
+            Err(csv::ErrorKind::UnequalLengths {
+                pos: Some(pos),
+                expected_len,
+                len,
+            }) => {
+                assert_eq!(pos, *pos_expected);
+                assert_eq!(expected_len, 4);
+                assert_eq!(len, 3);
+            }
+            res => panic!("match mismatch: got {:#?}", res),
+        }
     }
 
     #[cfg(feature = "crossbeam-utils")]
