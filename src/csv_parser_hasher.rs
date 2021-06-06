@@ -67,11 +67,15 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
         // read first record in order to get the number of fields
         if let Ok(true) = csv_reader.read_byte_record(&mut csv_record) {
             let csv_record_right_first = std::mem::take(&mut csv_record);
-            let num_of_fields = csv_record_right_first.len();
             let fields_as_key: Vec<_> = primary_key_columns.iter().collect();
-            let fields_as_value: Vec<_> = (0..num_of_fields)
-                .filter(|x| !primary_key_columns.contains(x))
-                .collect();
+            // TODO: maybe use this in order to only hash fields that are values and not act
+            // as primary keys. We should probably only do this, if primary key field indices are
+            // contiguous, because otherwise we will have multiple calls to our hashing function,
+            // which could hurt performance.
+            // let num_of_fields = csv_record_right_first.len();
+            // let fields_as_value: Vec<_> = (0..num_of_fields)
+            //     .filter(|x| !primary_key_columns.contains(x))
+            //     .collect();
 
             let mut records_buff: StackVec<CsvLeftRightParseResult> = smallvec::SmallVec::new();
 
