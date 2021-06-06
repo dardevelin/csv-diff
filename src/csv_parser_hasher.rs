@@ -61,11 +61,11 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
         &mut self,
         csv: R,
         primary_key_columns: &HashSet<usize>,
-    ) -> csv::Reader<R> {
+    ) -> csv::Result<csv::Reader<R>> {
         let mut csv_reader = csv::Reader::from_reader(csv);
         let mut csv_record = csv::ByteRecord::new();
         // read first record in order to get the number of fields
-        if let Ok(true) = csv_reader.read_byte_record(&mut csv_record) {
+        if csv_reader.read_byte_record(&mut csv_record)? {
             let csv_record_right_first = std::mem::take(&mut csv_record);
             let fields_as_key: Vec<_> = primary_key_columns.iter().collect();
             // TODO: maybe use this in order to only hash fields that are values and not act
@@ -103,10 +103,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                     .into_payload(),
                 );
                 let mut line = 2;
-                while csv_reader
-                    .read_byte_record(&mut csv_record)
-                    .unwrap_or(false)
-                {
+                while csv_reader.read_byte_record(&mut csv_record)? {
                     let mut hasher = AHasher::default();
                     let key_fields = fields_as_key
                         .iter()
@@ -149,7 +146,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
         } else {
             self.sender_total_lines.send(0).unwrap();
         }
-        csv_reader
+        Ok(csv_reader)
     }
 }
 
