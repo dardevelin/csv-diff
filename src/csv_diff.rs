@@ -29,47 +29,6 @@ pub struct CsvDiff<T: CsvHashTaskSpawner> {
     hash_task_spawner: T,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
-struct CsvRowKey {
-    key: Vec<Vec<u8>>,
-}
-
-impl CsvRowKey {
-    pub fn new() -> Self {
-        Self { key: Vec::new() }
-    }
-
-    pub fn push_key_column(&mut self, key_column: Vec<u8>) {
-        self.key.push(key_column);
-    }
-}
-
-impl From<Vec<Vec<u8>>> for CsvRowKey {
-    fn from(csv_row_key_vec: Vec<Vec<u8>>) -> Self {
-        Self {
-            key: csv_row_key_vec,
-        }
-    }
-}
-
-struct KeyByteRecord<'a, 'b> {
-    key_idx: &'a HashSet<usize>,
-    byte_record: &'b csv::ByteRecord,
-}
-
-impl From<KeyByteRecord<'_, '_>> for CsvRowKey {
-    fn from(key_byte_record: KeyByteRecord<'_, '_>) -> Self {
-        let mut row_key = Vec::new();
-        for idx in key_byte_record.key_idx.iter() {
-            if let Some(field) = key_byte_record.byte_record.get(*idx) {
-                let slice = Vec::from(field);
-                row_key.push(slice);
-            }
-        }
-        CsvRowKey::from(row_key)
-    }
-}
-
 #[derive(Debug)]
 pub struct CsvDiffBuilder<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
