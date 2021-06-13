@@ -1,3 +1,5 @@
+use mown::Mown;
+
 pub trait ThreadScoper<S>: Default {
     fn scope<F>(&self, f: F)
     where
@@ -26,12 +28,12 @@ impl CrossbeamScope {
 
 #[derive(Debug)]
 #[cfg(feature = "rayon-threads")]
-pub struct RayonScope {
-    thread_pool: rayon::ThreadPool,
+pub struct RayonScope<'tp> {
+    thread_pool: Mown<'tp, rayon::ThreadPool>,
 }
 
 #[cfg(feature = "rayon-threads")]
-impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope {
+impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope<'_> {
     fn scope<F>(&self, f: F)
     where
         F: FnOnce(&rayon::Scope<'scope>) + Send,
@@ -41,18 +43,26 @@ impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope {
 }
 
 #[cfg(feature = "rayon-threads")]
-impl Default for RayonScope {
+impl Default for RayonScope<'_> {
     fn default() -> Self {
         Self {
-            thread_pool: rayon::ThreadPoolBuilder::new().build().unwrap(),
+            thread_pool: Mown::Owned(rayon::ThreadPoolBuilder::new().build().unwrap()),
         }
     }
 }
 
 #[cfg(feature = "rayon-threads")]
-impl RayonScope {
-    pub fn new(thread_pool: rayon::ThreadPool) -> Self {
-        Self { thread_pool }
+impl<'tp> RayonScope<'tp> {
+    pub fn with_thread_pool_ref(thread_pool: &'tp rayon::ThreadPool) -> Self {
+        Self {
+            thread_pool: Mown::Borrowed(thread_pool),
+        }
+    }
+
+    pub fn with_thread_pool_owned(thread_pool: rayon::ThreadPool) -> Self {
+        Self {
+            thread_pool: Mown::Owned(thread_pool),
+        }
     }
 }
 
@@ -85,7 +95,8 @@ mod tests {
     #[cfg(feature = "rayon-threads")]
     fn rayon_scope_add_num() {
         let num = AtomicU64::new(0);
-        let rayon_scope = RayonScope::new(rayon::ThreadPoolBuilder::new().build().unwrap());
+        let tp = rayon::ThreadPoolBuilder::new().build().unwrap();
+        let rayon_scope = RayonScope::with_thread_pool_ref(&tp);
         rayon_scope.scope(|s| {
             s.spawn(|_s1| {
                 num.fetch_add(1, Ordering::SeqCst);

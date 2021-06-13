@@ -84,19 +84,19 @@ pub trait CsvHashTaskSpawner {
 
 #[derive(Debug)]
 #[cfg(feature = "rayon-threads")]
-pub struct CsvHashTaskSpawnerRayon {
-    thread_scoper: RayonScope,
+pub struct CsvHashTaskSpawnerRayon<'tp> {
+    thread_scoper: RayonScope<'tp>,
 }
 
 #[cfg(feature = "rayon-threads")]
-impl CsvHashTaskSpawnerRayon {
-    pub fn new(thread_scoper: RayonScope) -> Self {
+impl<'tp> CsvHashTaskSpawnerRayon<'tp> {
+    pub fn new(thread_scoper: RayonScope<'tp>) -> Self {
         Self { thread_scoper }
     }
 }
 
 #[cfg(feature = "rayon-threads")]
-impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon {
+impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'_> {
     fn spawn_hashing_tasks_and_send_result<R>(
         &self,
         csv_hash_task_senders_left: CsvHashTaskSenders<R>,
@@ -167,21 +167,23 @@ pub trait CsvHashTaskSpawnerBuilder<T> {
 }
 
 #[cfg(feature = "rayon-threads")]
-pub struct CsvHashTaskSpawnerBuilderRayon {
-    thread_pool: rayon::ThreadPool,
+pub struct CsvHashTaskSpawnerBuilderRayon<'tp> {
+    thread_pool: &'tp rayon::ThreadPool,
 }
 
 #[cfg(feature = "rayon-threads")]
-impl CsvHashTaskSpawnerBuilderRayon {
-    pub fn new(thread_pool: rayon::ThreadPool) -> Self {
+impl<'tp> CsvHashTaskSpawnerBuilderRayon<'tp> {
+    pub fn new(thread_pool: &'tp rayon::ThreadPool) -> Self {
         Self { thread_pool }
     }
 }
 
 #[cfg(feature = "rayon-threads")]
-impl CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerRayon> for CsvHashTaskSpawnerBuilderRayon {
-    fn build(self) -> CsvHashTaskSpawnerRayon {
-        CsvHashTaskSpawnerRayon::new(RayonScope::new(self.thread_pool))
+impl<'tp> CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerRayon<'tp>>
+    for CsvHashTaskSpawnerBuilderRayon<'tp>
+{
+    fn build(self) -> CsvHashTaskSpawnerRayon<'tp> {
+        CsvHashTaskSpawnerRayon::new(RayonScope::with_thread_pool_ref(self.thread_pool))
     }
 }
 

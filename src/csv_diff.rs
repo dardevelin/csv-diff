@@ -73,19 +73,22 @@ pub enum CsvDiffBuilderError {
 }
 
 #[cfg(feature = "rayon-threads")]
-impl CsvDiff<CsvHashTaskSpawnerRayon> {
+impl CsvDiff<CsvHashTaskSpawnerRayon<'_>> {
     pub fn new() -> Self {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
-            hash_task_spawner: CsvHashTaskSpawnerRayon::new(RayonScope::new(
+            hash_task_spawner: CsvHashTaskSpawnerRayon::new(RayonScope::with_thread_pool_owned(
                 rayon::ThreadPoolBuilder::new().build().unwrap(),
             )),
         };
         instance.primary_key_columns.insert(0);
         instance
     }
+}
 
-    pub fn with_rayon_thread_pool(thread_pool: rayon::ThreadPool) -> Self {
+#[cfg(feature = "rayon-threads")]
+impl<'tp> CsvDiff<CsvHashTaskSpawnerRayon<'tp>> {
+    pub fn with_rayon_thread_pool(thread_pool: &'tp rayon::ThreadPool) -> Self {
         Self::with_task_spawner_builder(CsvHashTaskSpawnerBuilderRayon::new(thread_pool))
     }
 }
@@ -1122,12 +1125,11 @@ mod tests {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn builder_without_primary_key_columns_is_no_primary_key_columns_err() {
+        let thread_pool = rayon::ThreadPoolBuilder::new().build().unwrap();
         let expected = CsvDiffBuilderError::NoPrimaryKeyColumns;
-        let actual = CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
-            rayon::ThreadPoolBuilder::new().build().unwrap(),
-        ))
-        .primary_key_columns(std::iter::empty())
-        .build();
+        let actual = CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(&thread_pool))
+            .primary_key_columns(std::iter::empty())
+            .build();
 
         assert!(actual.is_err());
         assert_eq!(expected, actual.unwrap_err());
@@ -1139,10 +1141,40 @@ mod tests {
     fn builder_without_specified_primary_key_columns_is_ok() {
         // it is ok, because it gets a sensible default value
         assert!(CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
-            rayon::ThreadPoolBuilder::new().build().unwrap()
+            &rayon::ThreadPoolBuilder::new().build().unwrap()
         ),)
         .build()
         .is_ok());
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_created_with_existing_thread_pool_works() {
+        let thread_pool = rayon::ThreadPoolBuilder::new().build().unwrap();
+        let csv_diff = CsvDiff::with_rayon_thread_pool(&thread_pool);
+
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,d";
+
+        let diff_res_actual = csv_diff
+            .diff(
+                Cursor::new(csv_left.as_bytes()),
+                Cursor::new(csv_right.as_bytes()),
+            )
+            .unwrap();
+        let diff_res_expected = DiffResult::Different {
+            diff_records: DiffRecords(vec![DiffRow::Modified {
+                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
+                field_indices: HashSet::from_iter(vec![2]),
+            }]),
+        };
+
+        assert_eq!(diff_res_actual, diff_res_expected);
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1163,7 +1195,7 @@ mod tests {
                         m,n,o";
 
         let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new(
-            CsvHashTaskSpawnerBuilderRayon::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+            CsvHashTaskSpawnerBuilderRayon::new(&rayon::ThreadPoolBuilder::new().build().unwrap()),
         )
         .primary_key_columns(vec![0, 1])
         .build()?
