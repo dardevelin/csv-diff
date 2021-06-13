@@ -40,8 +40,9 @@ mod integration_test {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn create_instance_with_builder_and_diff() -> Result<(), Box<dyn Error>> {
+        let thread_pool = rayon::ThreadPoolBuilder::new().build().unwrap();
         let csv_diff = csv_diff::csv_diff::CsvDiffBuilder::new(
-            CsvHashTaskSpawnerBuilderRayon::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+            CsvHashTaskSpawnerBuilderRayon::new(&thread_pool),
         )
         .build()?;
         let csv_left = "\
@@ -71,8 +72,9 @@ mod integration_test {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn create_instance_with_builder_set_all_and_diff() -> Result<(), Box<dyn Error>> {
+        let thread_pool = rayon::ThreadPoolBuilder::new().build().unwrap();
         let csv_diff = csv_diff::csv_diff::CsvDiffBuilder::new(
-            CsvHashTaskSpawnerBuilderRayon::new(rayon::ThreadPoolBuilder::new().build().unwrap()),
+            CsvHashTaskSpawnerBuilderRayon::new(&thread_pool),
         )
         .primary_key_columns(std::iter::once(0))
         .build()?;
