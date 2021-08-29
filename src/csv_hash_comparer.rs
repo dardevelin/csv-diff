@@ -225,7 +225,6 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                 }
             }
         }
-        //diff_records.reserve(csv_records_left_map.map.len() + csv_records_right_map.map.len());
 
         let mut diff_records = std::mem::take(&mut self.diff_records);
         diff_records.extend(

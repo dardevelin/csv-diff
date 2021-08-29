@@ -121,8 +121,6 @@ where
         instance
     }
 
-    //TODO: maybe rename this to `diff_then_seek`, so that we can have a `diff`
-    // method in the future that does not require `Seek`
     pub fn diff<R>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult>
     where
         R: Read + Seek + Send,

@@ -38,7 +38,6 @@ impl CsvParseResult<CsvLeftRightParseResult, RecordHash> for CsvParseResultRight
 pub(crate) const STACK_SIZE_VEC: usize = 32;
 pub(crate) type StackVec<T> = smallvec::SmallVec<[T; STACK_SIZE_VEC]>;
 
-// TODO: there will probably also one without a sender
 pub(crate) struct CsvParserHasherSender<T> {
     sender: Sender<StackVec<T>>,
     sender_total_lines: Sender<u64>,
