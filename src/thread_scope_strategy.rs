@@ -1,3 +1,4 @@
+#[cfg(feature = "rayon-threads")]
 use mown::Mown;
 
 pub trait ThreadScoper<S>: Default {

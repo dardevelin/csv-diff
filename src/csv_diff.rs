@@ -7,20 +7,14 @@ use crate::csv_hash_task_spawner::{
 use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerBuilderRayon, CsvHashTaskSpawnerRayon};
 use crate::csv_parse_result::CsvLeftRightParseResult;
 use crate::csv_parser_hasher::*;
-use crate::diff_row::{DiffRow, LineNum, RecordLineInfo};
 use crate::thread_scope_strategy::*;
 use crate::{csv_hash_comparer::CsvHashComparer, csv_hash_task_spawner::CsvHashTaskSpawner};
 use crate::{csv_hash_task_spawner::CsvHashTaskSpawnerBuilder, diff_result::DiffResult};
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Receiver;
 use csv::Reader;
-use std::hash::Hasher;
 use std::io::{Read, Seek};
 use std::iter::FromIterator;
-use std::iter::Iterator;
-use std::{
-    collections::{HashMap, HashSet},
-    marker::PhantomData,
-};
+use std::{collections::HashSet, iter::Iterator};
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -44,7 +38,7 @@ where
         B: CsvHashTaskSpawnerBuilder<T>,
     {
         Self {
-            primary_key_columns: HashSet::from_iter(std::iter::once(0)),
+            primary_key_columns: std::iter::once(0).collect(),
             hash_task_spawner: csv_hash_task_spawner_builder.build(),
         }
     }
@@ -87,6 +81,13 @@ impl CsvDiff<CsvHashTaskSpawnerRayon<'_>> {
 }
 
 #[cfg(feature = "rayon-threads")]
+impl Default for CsvDiff<CsvHashTaskSpawnerRayon<'_>> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "rayon-threads")]
 impl<'tp> CsvDiff<CsvHashTaskSpawnerRayon<'tp>> {
     pub fn with_rayon_thread_pool(thread_pool: &'tp rayon::ThreadPool) -> Self {
         Self::with_task_spawner_builder(CsvHashTaskSpawnerBuilderRayon::new(thread_pool))
@@ -113,12 +114,10 @@ where
     where
         B: CsvHashTaskSpawnerBuilder<T>,
     {
-        let mut instance = Self {
-            primary_key_columns: HashSet::new(),
+        Self {
+            primary_key_columns: std::iter::once(0).collect(),
             hash_task_spawner: csv_hash_task_spawner_builder.build(),
-        };
-        instance.primary_key_columns.insert(0);
-        instance
+        }
     }
 
     pub fn diff<R>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult>
@@ -208,6 +207,7 @@ mod tests {
     #[cfg(feature = "rayon-threads")]
     use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderRayon;
     use crate::diff_result::DiffRecords;
+    use crate::diff_row::{DiffRow, RecordLineInfo};
     use pretty_assertions::assert_eq;
     use std::{io::Cursor, iter::FromIterator};
 
@@ -840,13 +840,13 @@ mod tests {
                         g,h,i\n\
                         x,y,z";
 
-        let mut diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let mut diff_res_expected = DiffResult::Different {
+        let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Deleted(RecordLineInfo::new(
                     csv::ByteRecord::from(vec!["d", "e", "f"]),
@@ -877,13 +877,13 @@ mod tests {
                         x,y,z\n\
                         g,h,i";
 
-        let mut diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let mut diff_res_expected = DiffResult::Different {
+        let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Deleted(RecordLineInfo::new(
                     csv::ByteRecord::from(vec!["d", "e", "f"]),
@@ -915,13 +915,13 @@ mod tests {
                         a,b,d\n\
                         x,y,z";
 
-        let mut diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let mut diff_res_expected = DiffResult::Different {
+        let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Modified {
                     deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
@@ -960,13 +960,13 @@ mod tests {
                         j,k,l\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let mut diff_res_expected = DiffResult::Different {
+        let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Added(RecordLineInfo::new(
                     csv::ByteRecord::from(vec!["j", "k", "l"]),
@@ -996,13 +996,13 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let mut diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let mut diff_res_expected = DiffResult::Different {
+        let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Deleted(RecordLineInfo::new(
                     csv::ByteRecord::from(vec!["d", "e", "f"]),
@@ -1034,13 +1034,13 @@ mod tests {
                         d,e,f\n\
                         g,h,x";
 
-        let mut diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let mut diff_res_expected = DiffResult::Different {
+        let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Modified {
                     deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
@@ -1078,13 +1078,13 @@ mod tests {
                         x,y,z\n\
                         j,k,x\n";
 
-        let mut diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let mut diff_res_expected = DiffResult::Different {
+        let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Modified {
                     deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
@@ -1192,7 +1192,7 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new(
+        let diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new(
             CsvHashTaskSpawnerBuilderRayon::new(&rayon::ThreadPoolBuilder::new().build().unwrap()),
         )
         .primary_key_columns(vec![0, 1])
@@ -1202,7 +1202,7 @@ mod tests {
             Cursor::new(csv_right.as_bytes()),
         )
         .unwrap();
-        let mut diff_res_expected = DiffResult::Different {
+        let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Modified {
                     deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
@@ -1309,7 +1309,7 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerCrossbeam>::new(
+        let diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerCrossbeam>::new(
             CsvHashTaskSpawnerBuilderCrossbeam::new(),
         )
         .primary_key_columns(vec![0, 1])
@@ -1319,7 +1319,7 @@ mod tests {
             Cursor::new(csv_right.as_bytes()),
         )
         .unwrap();
-        let mut diff_res_expected = DiffResult::Different {
+        let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Modified {
                     deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),

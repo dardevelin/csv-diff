@@ -46,6 +46,7 @@ impl Position {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<csv::Position> for Position {
     fn into(self) -> csv::Position {
         let mut csv_pos = csv::Position::new();
