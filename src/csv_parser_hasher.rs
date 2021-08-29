@@ -35,7 +35,7 @@ impl CsvParseResult<CsvLeftRightParseResult, RecordHash> for CsvParseResultRight
     }
 }
 
-pub(crate) const STACK_SIZE_VEC: usize = 32;
+pub(crate) const STACK_SIZE_VEC: usize = 8;
 pub(crate) type StackVec<T> = smallvec::SmallVec<[T; STACK_SIZE_VEC]>;
 
 pub(crate) struct CsvParserHasherSender<T> {
