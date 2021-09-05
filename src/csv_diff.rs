@@ -66,24 +66,24 @@ pub enum CsvDiffBuilderError {
     NoPrimaryKeyColumns,
 }
 
+#[derive(Debug, Error)]
 #[cfg(feature = "rayon-threads")]
-impl CsvDiff<CsvHashTaskSpawnerRayon<'_>> {
-    pub fn new() -> Self {
-        let mut instance = Self {
-            primary_key_columns: HashSet::new(),
-            hash_task_spawner: CsvHashTaskSpawnerRayon::new(RayonScope::with_thread_pool_owned(
-                rayon::ThreadPoolBuilder::new().build().unwrap(),
-            )),
-        };
-        instance.primary_key_columns.insert(0);
-        instance
-    }
+pub enum CsvDiffNewError {
+    #[error("An error occured when trying to build the rayon thread pool.")]
+    ThreadPoolBuildError(#[from] rayon::ThreadPoolBuildError),
 }
 
 #[cfg(feature = "rayon-threads")]
-impl Default for CsvDiff<CsvHashTaskSpawnerRayon<'_>> {
-    fn default() -> Self {
-        Self::new()
+impl CsvDiff<CsvHashTaskSpawnerRayon<'_>> {
+    pub fn new() -> Result<Self, CsvDiffNewError> {
+        let mut instance = Self {
+            primary_key_columns: HashSet::new(),
+            hash_task_spawner: CsvHashTaskSpawnerRayon::new(RayonScope::with_thread_pool_owned(
+                rayon::ThreadPoolBuilder::new().build()?,
+            )),
+        };
+        instance.primary_key_columns.insert(0);
+        Ok(instance)
     }
 }
 
@@ -209,15 +209,15 @@ mod tests {
     use crate::diff_result::DiffRecords;
     use crate::diff_row::{DiffRow, RecordLineInfo};
     use pretty_assertions::assert_eq;
-    use std::{io::Cursor, iter::FromIterator};
+    use std::{error::Error, io::Cursor, iter::FromIterator};
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_empty_no_diff() {
+    fn diff_empty_no_diff() -> Result<(), Box<dyn Error>> {
         let csv_left = "";
         let csv_right = "";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -226,15 +226,16 @@ mod tests {
         let diff_res_expected = DiffResult::Equal;
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_empty_with_header_no_diff() {
+    fn diff_empty_with_header_no_diff() -> Result<(), Box<dyn Error>> {
         let csv_left = "header1,header2,header3";
         let csv_right = "header1,header2,header3";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -243,11 +244,12 @@ mod tests {
         let diff_res_expected = DiffResult::Equal;
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_no_diff() {
+    fn diff_one_line_with_header_no_diff() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -255,7 +257,7 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -264,11 +266,12 @@ mod tests {
         let diff_res_expected = DiffResult::Equal;
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_crazy_characters_no_diff() {
+    fn diff_one_line_with_header_crazy_characters_no_diff() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         ༼,౪,༽";
@@ -276,7 +279,7 @@ mod tests {
                         header1,header2,header3\n\
                         ༼,౪,༽";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -285,11 +288,12 @@ mod tests {
         let diff_res_expected = DiffResult::Equal;
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_crazy_characters_modified() {
+    fn diff_one_line_with_header_crazy_characters_modified() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         ༼,౪,༽";
@@ -297,7 +301,7 @@ mod tests {
                         header1,header2,header3\n\
                         ༼,౪,༼";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -312,11 +316,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_added_one_line() {
+    fn diff_one_line_with_header_added_one_line() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         ";
@@ -324,7 +329,7 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -338,11 +343,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_deleted_one_line() {
+    fn diff_one_line_with_header_deleted_one_line() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -350,7 +356,7 @@ mod tests {
                         header1,header2,header3\n\
                         ";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -364,11 +370,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_modified_one_field() {
+    fn diff_one_line_with_header_modified_one_field() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -376,7 +383,7 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,d";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -391,11 +398,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_modified_all_fields() {
+    fn diff_one_line_with_header_modified_all_fields() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -403,7 +411,7 @@ mod tests {
                         header1,header2,header3\n\
                         a,c,d";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -418,11 +426,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_no_diff() {
+    fn diff_multiple_lines_with_header_no_diff() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -432,7 +441,7 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -441,11 +450,12 @@ mod tests {
         let diff_res_expected = DiffResult::Equal;
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_different_order_no_diff() {
+    fn diff_multiple_lines_with_header_different_order_no_diff() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -455,7 +465,7 @@ mod tests {
                         d,e,f\n\
                         a,b,c";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -464,11 +474,12 @@ mod tests {
         let diff_res_expected = DiffResult::Equal;
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_added_one_line_at_start() {
+    fn diff_multiple_lines_with_header_added_one_line_at_start() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -479,7 +490,7 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -493,11 +504,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_added_one_line_at_middle() {
+    fn diff_multiple_lines_with_header_added_one_line_at_middle() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -508,7 +520,7 @@ mod tests {
                         x,y,z\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -522,11 +534,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_added_one_line_at_end() {
+    fn diff_multiple_lines_with_header_added_one_line_at_end() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -537,7 +550,7 @@ mod tests {
                         d,e,f\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -551,11 +564,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_deleted_one_line_at_start() {
+    fn diff_multiple_lines_with_header_deleted_one_line_at_start() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         x,y,z\n\
@@ -566,7 +580,7 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -580,11 +594,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_deleted_one_line_at_middle() {
+    fn diff_multiple_lines_with_header_deleted_one_line_at_middle() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -595,7 +610,7 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -609,11 +624,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_deleted_one_line_at_end() {
+    fn diff_multiple_lines_with_header_deleted_one_line_at_end() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -624,7 +640,7 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -638,11 +654,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_modified_one_line_at_start() {
+    fn diff_multiple_lines_with_header_modified_one_line_at_start() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -654,7 +671,7 @@ mod tests {
                         d,e,f\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -669,11 +686,13 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_modified_one_line_at_start_different_order() {
+    fn diff_multiple_lines_with_header_modified_one_line_at_start_different_order(
+    ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -685,7 +704,7 @@ mod tests {
                         a,x,c\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -700,11 +719,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_modified_one_line_at_middle() {
+    fn diff_multiple_lines_with_header_modified_one_line_at_middle() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -716,7 +736,7 @@ mod tests {
                         d,x,f\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -731,11 +751,13 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_modified_one_line_at_middle_different_order() {
+    fn diff_multiple_lines_with_header_modified_one_line_at_middle_different_order(
+    ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -747,7 +769,7 @@ mod tests {
                         a,b,c\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -762,11 +784,12 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_modified_one_line_at_end() {
+    fn diff_multiple_lines_with_header_modified_one_line_at_end() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -778,7 +801,7 @@ mod tests {
                         d,e,f\n\
                         x,x,z";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -793,11 +816,13 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_modified_one_line_at_end_different_order() {
+    fn diff_multiple_lines_with_header_modified_one_line_at_end_different_order(
+    ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -809,7 +834,7 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -824,11 +849,13 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_added_and_deleted_same_lines() {
+    fn diff_multiple_lines_with_header_added_and_deleted_same_lines() -> Result<(), Box<dyn Error>>
+    {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -840,7 +867,7 @@ mod tests {
                         g,h,i\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -861,11 +888,13 @@ mod tests {
         let diff_actual = diff_res_actual.sort_by_line();
         let diff_expected = diff_res_expected.sort_by_line();
         assert_eq!(diff_actual, diff_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_added_and_deleted_different_lines() {
+    fn diff_multiple_lines_with_header_added_and_deleted_different_lines(
+    ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -877,7 +906,7 @@ mod tests {
                         x,y,z\n\
                         g,h,i";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -899,11 +928,12 @@ mod tests {
         let diff_actual = diff_res_actual.sort_by_line();
         let diff_expected = diff_res_expected.sort_by_line();
         assert_eq!(diff_actual, diff_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_added_modified_and_deleted() {
+    fn diff_multiple_lines_with_header_added_modified_and_deleted() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -915,7 +945,7 @@ mod tests {
                         a,b,d\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -942,11 +972,12 @@ mod tests {
         let diff_actual = diff_res_actual.sort_by_line();
         let diff_expected = diff_res_expected.sort_by_line();
         assert_eq!(diff_actual, diff_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_added_multiple() {
+    fn diff_multiple_lines_with_header_added_multiple() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -960,7 +991,7 @@ mod tests {
                         j,k,l\n\
                         m,n,o";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -982,11 +1013,12 @@ mod tests {
         let diff_actual = diff_res_actual.sort_by_line();
         let diff_expected = diff_res_expected.sort_by_line();
         assert_eq!(diff_actual, diff_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_deleted_multiple() {
+    fn diff_multiple_lines_with_header_deleted_multiple() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -996,7 +1028,7 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -1018,11 +1050,12 @@ mod tests {
         let diff_actual = diff_res_actual.sort_by_line();
         let diff_expected = diff_res_expected.sort_by_line();
         assert_eq!(diff_actual, diff_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_modified_multiple() {
+    fn diff_multiple_lines_with_header_modified_multiple() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -1034,7 +1067,7 @@ mod tests {
                         d,e,f\n\
                         g,h,x";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -1058,11 +1091,13 @@ mod tests {
         let diff_actual = diff_res_actual.sort_by_line();
         let diff_expected = diff_res_expected.sort_by_line();
         assert_eq!(diff_actual, diff_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_multiple_lines_with_header_added_modified_deleted_multiple() {
+    fn diff_multiple_lines_with_header_added_modified_deleted_multiple(
+    ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -1078,7 +1113,7 @@ mod tests {
                         x,y,z\n\
                         j,k,x\n";
 
-        let diff_res_actual = CsvDiff::new()
+        let diff_res_actual = CsvDiff::new()?
             .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
@@ -1118,12 +1153,14 @@ mod tests {
         let diff_actual = diff_res_actual.sort_by_line();
         let diff_expected = diff_res_expected.sort_by_line();
         assert_eq!(diff_actual, diff_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn builder_without_primary_key_columns_is_no_primary_key_columns_err() {
-        let thread_pool = rayon::ThreadPoolBuilder::new().build().unwrap();
+    fn builder_without_primary_key_columns_is_no_primary_key_columns_err(
+    ) -> Result<(), Box<dyn Error>> {
+        let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
         let expected = CsvDiffBuilderError::NoPrimaryKeyColumns;
         let actual = CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(&thread_pool))
             .primary_key_columns(std::iter::empty())
@@ -1132,23 +1169,25 @@ mod tests {
         assert!(actual.is_err());
         assert_eq!(expected, actual.unwrap_err());
         assert_eq!(expected.to_string(), "No primary key columns have been specified. You need to provide at least one column index.");
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn builder_without_specified_primary_key_columns_is_ok() {
+    fn builder_without_specified_primary_key_columns_is_ok() -> Result<(), Box<dyn Error>> {
         // it is ok, because it gets a sensible default value
         assert!(CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
-            &rayon::ThreadPoolBuilder::new().build().unwrap()
+            &rayon::ThreadPoolBuilder::new().build()?
         ),)
         .build()
         .is_ok());
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_created_with_existing_thread_pool_works() {
-        let thread_pool = rayon::ThreadPoolBuilder::new().build().unwrap();
+    fn diff_created_with_existing_thread_pool_works() -> Result<(), Box<dyn Error>> {
+        let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
         let csv_diff = CsvDiff::with_rayon_thread_pool(&thread_pool);
 
         let csv_left = "\
@@ -1173,12 +1212,13 @@ mod tests {
         };
 
         assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn diff_multiple_lines_with_header_combined_key_added_deleted_modified(
-    ) -> Result<(), CsvDiffBuilderError> {
+    ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -1193,15 +1233,14 @@ mod tests {
                         m,n,o";
 
         let diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new(
-            CsvHashTaskSpawnerBuilderRayon::new(&rayon::ThreadPoolBuilder::new().build().unwrap()),
+            CsvHashTaskSpawnerBuilderRayon::new(&rayon::ThreadPoolBuilder::new().build()?),
         )
         .primary_key_columns(vec![0, 1])
         .build()?
         .diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
-        )
-        .unwrap();
+        )?;
         let diff_res_expected = DiffResult::Different {
             diff_records: DiffRecords(vec![
                 DiffRow::Modified {
@@ -1228,7 +1267,8 @@ mod tests {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_error_left_has_different_num_of_fields() {
+    fn diff_one_line_with_header_error_left_has_different_num_of_fields(
+    ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3,header4\n\
                         a,b,c";
@@ -1236,7 +1276,7 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,d";
 
-        let diff_res_actual = CsvDiff::new().diff(
+        let diff_res_actual = CsvDiff::new()?.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         );
@@ -1256,11 +1296,13 @@ mod tests {
             }
             res => panic!("match mismatch: got {:#?}", res),
         }
+        Ok(())
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_error_right_has_different_num_of_fields() {
+    fn diff_one_line_with_header_error_right_has_different_num_of_fields(
+    ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -1268,7 +1310,7 @@ mod tests {
                         header1,header2,header3,header4\n\
                         a,b,d";
 
-        let diff_res_actual = CsvDiff::new().diff(
+        let diff_res_actual = CsvDiff::new()?.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         );
@@ -1288,6 +1330,7 @@ mod tests {
             }
             res => panic!("match mismatch: got {:#?}", res),
         }
+        Ok(())
     }
 
     #[cfg(feature = "crossbeam-utils")]

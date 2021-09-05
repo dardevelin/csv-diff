@@ -1,7 +1,7 @@
 #[cfg(feature = "rayon-threads")]
 use mown::Mown;
 
-pub trait ThreadScoper<S>: Default {
+pub trait ThreadScoper<S> {
     fn scope<F>(&self, f: F)
     where
         F: FnOnce(&S) + Send;
@@ -40,15 +40,6 @@ impl<'scope> ThreadScoper<rayon::Scope<'scope>> for RayonScope<'_> {
         F: FnOnce(&rayon::Scope<'scope>) + Send,
     {
         self.thread_pool.scope(|s| f(s));
-    }
-}
-
-#[cfg(feature = "rayon-threads")]
-impl Default for RayonScope<'_> {
-    fn default() -> Self {
-        Self {
-            thread_pool: Mown::Owned(rayon::ThreadPoolBuilder::new().build().unwrap()),
-        }
     }
 }
 

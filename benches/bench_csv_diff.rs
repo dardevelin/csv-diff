@@ -6,7 +6,7 @@ use std::{fmt::Display, io::Cursor};
 use utils::csv_generator::CsvGenerator;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let csv_diff = csv_diff::CsvDiff::new();
+    let csv_diff = csv_diff::CsvDiff::new().unwrap();
 
     let mut bench_group = c.benchmark_group("csv_diff");
 
