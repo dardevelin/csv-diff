@@ -57,4 +57,31 @@ impl DiffRecords {
     pub fn as_slice(&self) -> &[DiffRow] {
         self.0.as_slice()
     }
+
+    pub fn iter(&self) -> core::slice::Iter<'_, DiffRow> {
+        self.0.iter()
+    }
+}
+
+impl IntoIterator for DiffRecords {
+    type Item = DiffRow;
+    type IntoIter = DiffRecordsIntoIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DiffRecordsIntoIterator {
+            inner: self.0.into_iter(),
+        }
+    }
+}
+
+pub struct DiffRecordsIntoIterator {
+    inner: std::vec::IntoIter<DiffRow>,
+}
+
+impl Iterator for DiffRecordsIntoIterator {
+    type Item = DiffRow;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
 }
