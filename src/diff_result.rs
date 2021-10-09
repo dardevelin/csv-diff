@@ -1,38 +1,42 @@
 use crate::diff_row::*;
 
 #[derive(Debug, PartialEq)]
-pub enum DiffResult {
-    Equal,
-    Different { diff_records: DiffRecords },
+pub struct DiffResult {
+    pub(crate) diff_records: DiffRecords,
 }
 
 impl DiffResult {
-    pub fn sort_by_line(self) -> DiffResultSorted {
-        match self {
-            Self::Different { mut diff_records } => {
-                diff_records.sort_by_line();
-                DiffResultSorted::ByLine(diff_records)
-            }
-            Self::Equal => DiffResultSorted::ByLine(DiffRecords(vec![])),
-        }
+    pub fn sort_by_line(mut self) -> SortedByLine {
+        self.diff_records.sort_by_line();
+        SortedByLine::new(self.diff_records)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.diff_records.0.is_empty()
     }
 }
 
 #[derive(Debug, PartialEq)]
-pub enum DiffResultSorted {
-    ByLine(DiffRecords),
+pub struct SortedByLine {
+    diff_records: DiffRecords,
 }
 
-impl DiffResultSorted {
+impl SortedByLine {
+    pub(crate) fn new(diff_records: DiffRecords) -> Self {
+        Self { diff_records }
+    }
+
+    pub fn as_slice(&self) -> &[DiffRow] {
+        self.diff_records.as_slice()
+    }
+
     pub fn into_vec(self) -> Vec<DiffRow> {
-        match self {
-            Self::ByLine(diff_records) => diff_records.into_vec(),
-        }
+        self.diff_records.into_vec()
     }
 }
 
 #[derive(Debug, PartialEq)]
-pub struct DiffRecords(pub(crate) Vec<DiffRow>);
+pub(crate) struct DiffRecords(pub(crate) Vec<DiffRow>);
 
 impl DiffRecords {
     pub(crate) fn sort_by_line(&mut self) {
@@ -83,6 +87,10 @@ impl DiffRecords {
                 &for_added_b
             }),
         })
+    }
+
+    pub(crate) fn as_slice(&self) -> &[DiffRow] {
+        self.0.as_slice()
     }
 
     pub(crate) fn into_vec(self) -> Vec<DiffRow> {

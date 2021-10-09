@@ -265,12 +265,8 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                 }),
         );
 
-        Ok(if diff_records.is_empty() {
-            DiffResult::Equal
-        } else {
-            DiffResult::Different {
-                diff_records: DiffRecords(diff_records),
-            }
+        Ok(DiffResult {
+            diff_records: DiffRecords(diff_records),
         })
     }
 }

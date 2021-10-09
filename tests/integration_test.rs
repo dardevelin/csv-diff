@@ -2,10 +2,7 @@
 mod integration_test {
     #[cfg(feature = "rayon-threads")]
     use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderRayon;
-    use csv_diff::{
-        diff_result::{DiffRecords, DiffResult},
-        diff_row::{DiffRow, RecordLineInfo},
-    };
+    use csv_diff::diff_row::{DiffRow, RecordLineInfo};
     use pretty_assertions::assert_eq;
     use std::{collections::HashSet, error::Error, io::Cursor, iter::FromIterator};
 
