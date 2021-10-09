@@ -16,12 +16,13 @@ mod integration_test {
         let csv_right = "\
                         header1,header2,header3\n\
                         a,b,d";
-        let diff_res = csv_diff.diff(
+        let mut diff_res = csv_diff.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )?;
 
-        let diff_rows_actual = diff_res.sort_by_line().into_vec();
+        diff_res.sort_by_line();
+        let diff_rows_actual = diff_res.as_slice();
 
         let diff_rows_expected = vec![DiffRow::Modified {
             deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
@@ -48,12 +49,13 @@ mod integration_test {
         let csv_right = "\
                         header1,header2,header3\n\
                         a,b,d";
-        let diff_res = csv_diff.diff(
+        let mut diff_res = csv_diff.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )?;
 
-        let diff_rows_actual = diff_res.sort_by_line().into_vec();
+        diff_res.sort_by_line();
+        let diff_rows_actual = diff_res.as_slice();
 
         let diff_rows_expected = vec![DiffRow::Modified {
             deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
@@ -81,12 +83,13 @@ mod integration_test {
         let csv_right = "\
                         header1,header2,header3\n\
                         a,b,d";
-        let diff_res = csv_diff.diff(
+        let mut diff_res = csv_diff.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )?;
 
-        let diff_rows_actual = diff_res.sort_by_line().into_vec();
+        diff_res.sort_by_line();
+        let diff_rows_actual = diff_res.as_slice();
 
         let diff_rows_expected = vec![DiffRow::Modified {
             deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
@@ -113,12 +116,13 @@ mod integration_test {
         let csv_right = "\
                         header1,header2,header3\n\
                         a,b,d";
-        let diff_res = csv_diff.diff(
+        let mut diff_res = csv_diff.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )?;
 
-        let diff_rows_actual = diff_res.sort_by_line().into_vec();
+        diff_res.sort_by_line();
+        let diff_rows_actual = diff_res.as_slice();
 
         let diff_rows_expected = vec![DiffRow::Modified {
             deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
@@ -212,12 +216,13 @@ mod integration_test {
             let csv_right = "\
                             header1,header2,header3\n\
                             a,b,d";
-            let diff_res = csv_diff.diff(
+            let mut diff_res = csv_diff.diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )?;
 
-            let diff_rows_actual = diff_res.sort_by_line().into_vec();
+            diff_res.sort_by_line();
+            let diff_rows_actual = diff_res.as_slice();
 
             let diff_rows_expected = vec![DiffRow::Modified {
                 deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),

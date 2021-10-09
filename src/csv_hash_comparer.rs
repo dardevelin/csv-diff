@@ -48,7 +48,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
     pub fn compare_csv_left_right_parse_result(
         &mut self,
         csv_left_right_parse_results: impl IntoIterator<Item = StackVec<CsvLeftRightParseResult>>,
-    ) -> csv::Result<DiffResult> {
+    ) -> csv::Result<DiffRecords> {
         for csv_left_right_parse_result in csv_left_right_parse_results.into_iter().flatten() {
             match csv_left_right_parse_result {
                 CsvLeftRightParseResult::Left(left_record_res) => {
@@ -265,8 +265,6 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                 }),
         );
 
-        Ok(DiffResult {
-            diff_records: DiffRecords(diff_records),
-        })
+        Ok(DiffRecords(diff_records))
     }
 }
