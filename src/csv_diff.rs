@@ -88,13 +88,6 @@ impl CsvDiff<CsvHashTaskSpawnerRayon<'_>> {
     }
 }
 
-#[cfg(feature = "rayon-threads")]
-impl<'tp> CsvDiff<CsvHashTaskSpawnerRayon<'tp>> {
-    pub fn with_rayon_thread_pool(thread_pool: &'tp rayon::ThreadPool) -> Self {
-        Self::with_task_spawner_builder(CsvHashTaskSpawnerBuilderRayon::new(thread_pool))
-    }
-}
-
 #[cfg(feature = "crossbeam-utils")]
 impl CsvDiff<CsvHashTaskSpawnerCrossbeam> {
     pub fn new() -> Self {
@@ -111,16 +104,6 @@ impl<T> CsvDiff<T>
 where
     T: CsvHashTaskSpawner,
 {
-    pub fn with_task_spawner_builder<B>(csv_hash_task_spawner_builder: B) -> Self
-    where
-        B: CsvHashTaskSpawnerBuilder<T>,
-    {
-        Self {
-            primary_key_columns: std::iter::once(0).collect(),
-            hash_task_spawner: csv_hash_task_spawner_builder.build(),
-        }
-    }
-
     pub fn diff_bytes<R>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffByteRecords>
     where
         R: Read + Seek + Send,
@@ -1138,7 +1121,8 @@ mod tests {
     #[test]
     fn diff_created_with_existing_thread_pool_works() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = CsvDiff::with_rayon_thread_pool(&thread_pool);
+        let csv_diff =
+            CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(&thread_pool)).build()?;
 
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1180,9 +1164,9 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new(
-            CsvHashTaskSpawnerBuilderRayon::new(&rayon::ThreadPoolBuilder::new().build()?),
-        )
+        let mut diff_res_actual = CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
+            &rayon::ThreadPoolBuilder::new().build()?,
+        ))
         .primary_key_columns(vec![0, 1])
         .build()?
         .diff_bytes(
