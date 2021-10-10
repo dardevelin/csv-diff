@@ -1,27 +1,9 @@
 use crate::diff_row::*;
 
 #[derive(Debug, PartialEq)]
-pub enum DiffResult {
-    Equal,
-    Different { diff_records: DiffRecords },
-}
+pub struct DiffByteRecords(pub(crate) Vec<DiffByteRow>);
 
-impl DiffResult {
-    pub fn sort_by_line(self) -> Option<DiffRecords> {
-        match self {
-            Self::Different { mut diff_records } => {
-                diff_records.sort_by_line();
-                Some(diff_records)
-            }
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct DiffRecords(pub Vec<DiffRow>);
-
-impl DiffRecords {
+impl DiffByteRecords {
     pub fn sort_by_line(&mut self) {
         self.0.sort_by(|a, b| match (a.line_num(), b.line_num()) {
             (LineNum::OneSide(line_num_a), LineNum::OneSide(line_num_b)) => {
@@ -70,5 +52,36 @@ impl DiffRecords {
                 &for_added_b
             }),
         })
+    }
+
+    pub fn as_slice(&self) -> &[DiffByteRow] {
+        self.0.as_slice()
+    }
+
+    pub fn iter(&self) -> core::slice::Iter<'_, DiffByteRow> {
+        self.0.iter()
+    }
+}
+
+impl IntoIterator for DiffByteRecords {
+    type Item = DiffByteRow;
+    type IntoIter = DiffRecordsIntoIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DiffRecordsIntoIterator {
+            inner: self.0.into_iter(),
+        }
+    }
+}
+
+pub struct DiffRecordsIntoIterator {
+    inner: std::vec::IntoIter<DiffByteRow>,
+}
+
+impl Iterator for DiffRecordsIntoIterator {
+    type Item = DiffByteRow;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
     }
 }

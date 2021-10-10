@@ -1,4 +1,5 @@
 use crate::csv_hash_task_spawner::CsvHashTaskSenders;
+use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilder;
 #[cfg(feature = "crossbeam-utils")]
 use crate::csv_hash_task_spawner::{
     CsvHashTaskSpawnerBuilderCrossbeam, CsvHashTaskSpawnerCrossbeam,
@@ -7,9 +8,9 @@ use crate::csv_hash_task_spawner::{
 use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerBuilderRayon, CsvHashTaskSpawnerRayon};
 use crate::csv_parse_result::CsvLeftRightParseResult;
 use crate::csv_parser_hasher::*;
+use crate::diff_result::DiffByteRecords;
 use crate::thread_scope_strategy::*;
 use crate::{csv_hash_comparer::CsvHashComparer, csv_hash_task_spawner::CsvHashTaskSpawner};
-use crate::{csv_hash_task_spawner::CsvHashTaskSpawnerBuilder, diff_result::DiffResult};
 use crossbeam_channel::Receiver;
 use csv::Reader;
 use std::io::{Read, Seek};
@@ -120,7 +121,7 @@ where
         }
     }
 
-    pub fn diff<R>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffResult>
+    pub fn diff_bytes<R>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffByteRecords>
     where
         R: Read + Seek + Send,
     {
@@ -165,7 +166,7 @@ where
         receiver_csv_reader_left: Receiver<csv::Result<Reader<R>>>,
         receiver_csv_reader_right: Receiver<csv::Result<Reader<R>>>,
         receiver: Receiver<StackVec<CsvLeftRightParseResult>>,
-    ) -> csv::Result<DiffResult>
+    ) -> csv::Result<DiffByteRecords>
     where
         R: Read + Seek + Send,
     {
@@ -206,8 +207,8 @@ mod tests {
     use super::*;
     #[cfg(feature = "rayon-threads")]
     use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderRayon;
-    use crate::diff_result::DiffRecords;
-    use crate::diff_row::{DiffRow, RecordLineInfo};
+    use crate::diff_result::DiffByteRecords;
+    use crate::diff_row::{ByteRecordLineInfo, DiffByteRow};
     use pretty_assertions::assert_eq;
     use std::{error::Error, io::Cursor, iter::FromIterator};
 
@@ -218,12 +219,12 @@ mod tests {
         let csv_right = "";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Equal;
+        let diff_res_expected = DiffByteRecords(vec![]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -236,12 +237,12 @@ mod tests {
         let csv_right = "header1,header2,header3";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Equal;
+        let diff_res_expected = DiffByteRecords(vec![]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -258,12 +259,12 @@ mod tests {
                         a,b,c";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Equal;
+        let diff_res_expected = DiffByteRecords(vec![]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -280,12 +281,12 @@ mod tests {
                         ༼,౪,༽";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Equal;
+        let diff_res_expected = DiffByteRecords(vec![]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -302,18 +303,16 @@ mod tests {
                         ༼,౪,༼";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["༼", "౪", "༽"]), 2),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["༼", "౪", "༼"]), 2),
-                field_indices: HashSet::from_iter(vec![2]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["༼", "౪", "༽"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["༼", "౪", "༼"]), 2),
+            field_indices: HashSet::from_iter(vec![2]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -330,17 +329,15 @@ mod tests {
                         a,b,c";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Added(RecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
-                2,
-            ))]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["a", "b", "c"]),
+            2,
+        ))]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -357,17 +354,14 @@ mod tests {
                         ";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Deleted(RecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
-                2,
-            ))]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Delete(
+            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+        )]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -384,18 +378,16 @@ mod tests {
                         a,b,d";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-                field_indices: HashSet::from_iter(vec![2]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
+            field_indices: HashSet::from_iter(vec![2]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -412,18 +404,16 @@ mod tests {
                         a,c,d";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "c", "d"]), 2),
-                field_indices: HashSet::from_iter(vec![1, 2]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "c", "d"]), 2),
+            field_indices: HashSet::from_iter(vec![1, 2]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -442,12 +432,12 @@ mod tests {
                         d,e,f";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Equal;
+        let diff_res_expected = DiffByteRecords(vec![]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -466,12 +456,12 @@ mod tests {
                         a,b,c";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Equal;
+        let diff_res_expected = DiffByteRecords(vec![]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -491,17 +481,15 @@ mod tests {
                         d,e,f";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Added(RecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "y", "z"]),
-                2,
-            ))]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["x", "y", "z"]),
+            2,
+        ))]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -521,17 +509,15 @@ mod tests {
                         d,e,f";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Added(RecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "y", "z"]),
-                3,
-            ))]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["x", "y", "z"]),
+            3,
+        ))]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -551,17 +537,15 @@ mod tests {
                         x,y,z";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Added(RecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "y", "z"]),
-                4,
-            ))]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["x", "y", "z"]),
+            4,
+        ))]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -581,17 +565,14 @@ mod tests {
                         d,e,f";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Deleted(RecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "y", "z"]),
-                2,
-            ))]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Delete(
+            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 2),
+        )]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -611,17 +592,14 @@ mod tests {
                         d,e,f";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Deleted(RecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "y", "z"]),
-                3,
-            ))]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Delete(
+            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 3),
+        )]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -641,17 +619,14 @@ mod tests {
                         d,e,f";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Deleted(RecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "y", "z"]),
-                4,
-            ))]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Delete(
+            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
+        )]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -672,18 +647,16 @@ mod tests {
                         x,y,z";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "x", "c"]), 2),
-                field_indices: HashSet::from_iter(vec![1]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "x", "c"]), 2),
+            field_indices: HashSet::from_iter(vec![1]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -705,18 +678,16 @@ mod tests {
                         x,y,z";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "x", "c"]), 3),
-                field_indices: HashSet::from_iter(vec![1]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "x", "c"]), 3),
+            field_indices: HashSet::from_iter(vec![1]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -737,18 +708,16 @@ mod tests {
                         x,y,z";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "e", "f"]), 3),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "x", "f"]), 3),
-                field_indices: HashSet::from_iter(vec![1]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "e", "f"]), 3),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "x", "f"]), 3),
+            field_indices: HashSet::from_iter(vec![1]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -770,18 +739,16 @@ mod tests {
                         x,y,z";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "e", "f"]), 3),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["d", "x", "f"]), 2),
-                field_indices: HashSet::from_iter(vec![1]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "e", "f"]), 3),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "x", "f"]), 2),
+            field_indices: HashSet::from_iter(vec![1]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -802,18 +769,16 @@ mod tests {
                         x,x,z";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "x", "z"]), 4),
-                field_indices: HashSet::from_iter(vec![1]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "x", "z"]), 4),
+            field_indices: HashSet::from_iter(vec![1]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -835,18 +800,16 @@ mod tests {
                         d,e,f";
 
         let diff_res_actual = CsvDiff::new()?
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["x", "x", "z"]), 2),
-                field_indices: HashSet::from_iter(vec![1]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "x", "z"]), 2),
+            field_indices: HashSet::from_iter(vec![1]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -867,27 +830,26 @@ mod tests {
                         g,h,i\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff(
+        let mut diff_res_actual = CsvDiff::new()?
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![
-                DiffRow::Deleted(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["d", "e", "f"]),
-                    3,
-                )),
-                DiffRow::Added(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["g", "h", "i"]),
-                    3,
-                )),
-            ]),
-        };
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRow::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+            DiffByteRow::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["g", "h", "i"]),
+                3,
+            )),
+        ]);
+
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 
@@ -906,28 +868,26 @@ mod tests {
                         x,y,z\n\
                         g,h,i";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff(
+        let mut diff_res_actual = CsvDiff::new()?
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![
-                DiffRow::Deleted(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["d", "e", "f"]),
-                    3,
-                )),
-                DiffRow::Added(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["g", "h", "i"]),
-                    4,
-                )),
-            ]),
-        };
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRow::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+            DiffByteRow::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["g", "h", "i"]),
+                4,
+            )),
+        ]);
 
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 
@@ -945,33 +905,31 @@ mod tests {
                         a,b,d\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff(
+        let mut diff_res_actual = CsvDiff::new()?
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![
-                DiffRow::Modified {
-                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 3),
-                    field_indices: HashSet::from_iter(vec![2]),
-                },
-                DiffRow::Added(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["g", "h", "i"]),
-                    2,
-                )),
-                DiffRow::Deleted(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["d", "e", "f"]),
-                    3,
-                )),
-            ]),
-        };
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRow::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 3),
+                field_indices: HashSet::from_iter(vec![2]),
+            },
+            DiffByteRow::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["g", "h", "i"]),
+                2,
+            )),
+            DiffByteRow::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+        ]);
 
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 
@@ -991,28 +949,26 @@ mod tests {
                         j,k,l\n\
                         m,n,o";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff(
+        let mut diff_res_actual = CsvDiff::new()?
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![
-                DiffRow::Added(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["j", "k", "l"]),
-                    5,
-                )),
-                DiffRow::Added(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["m", "n", "o"]),
-                    6,
-                )),
-            ]),
-        };
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRow::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["j", "k", "l"]),
+                5,
+            )),
+            DiffByteRow::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["m", "n", "o"]),
+                6,
+            )),
+        ]);
 
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 
@@ -1028,28 +984,26 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff(
+        let mut diff_res_actual = CsvDiff::new()?
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![
-                DiffRow::Deleted(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["d", "e", "f"]),
-                    3,
-                )),
-                DiffRow::Deleted(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["g", "h", "i"]),
-                    4,
-                )),
-            ]),
-        };
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRow::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+            DiffByteRow::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["g", "h", "i"]),
+                4,
+            )),
+        ]);
 
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 
@@ -1067,30 +1021,28 @@ mod tests {
                         d,e,f\n\
                         g,h,x";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff(
+        let mut diff_res_actual = CsvDiff::new()?
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![
-                DiffRow::Modified {
-                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
-                    field_indices: HashSet::from_iter(vec![2]),
-                },
-                DiffRow::Modified {
-                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["g", "h", "i"]), 4),
-                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["g", "h", "x"]), 4),
-                    field_indices: HashSet::from_iter(vec![2]),
-                },
-            ]),
-        };
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRow::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
+                field_indices: HashSet::from_iter(vec![2]),
+            },
+            DiffByteRow::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["g", "h", "i"]), 4),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["g", "h", "x"]), 4),
+                field_indices: HashSet::from_iter(vec![2]),
+            },
+        ]);
 
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 
@@ -1113,46 +1065,44 @@ mod tests {
                         x,y,z\n\
                         j,k,x\n";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff(
+        let mut diff_res_actual = CsvDiff::new()?
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![
-                DiffRow::Modified {
-                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
-                    field_indices: HashSet::from_iter(vec![2]),
-                },
-                DiffRow::Deleted(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["d", "e", "f"]),
-                    3,
-                )),
-                DiffRow::Added(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["p", "q", "r"]),
-                    3,
-                )),
-                DiffRow::Deleted(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["g", "h", "i"]),
-                    4,
-                )),
-                DiffRow::Modified {
-                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["j", "k", "l"]), 5),
-                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["j", "k", "x"]), 6),
-                    field_indices: HashSet::from_iter(vec![2]),
-                },
-                DiffRow::Added(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["x", "y", "z"]),
-                    5,
-                )),
-            ]),
-        };
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRow::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
+                field_indices: HashSet::from_iter(vec![2]),
+            },
+            DiffByteRow::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+            DiffByteRow::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["p", "q", "r"]),
+                3,
+            )),
+            DiffByteRow::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["g", "h", "i"]),
+                4,
+            )),
+            DiffByteRow::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["j", "k", "l"]), 5),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["j", "k", "x"]), 6),
+                field_indices: HashSet::from_iter(vec![2]),
+            },
+            DiffByteRow::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["x", "y", "z"]),
+                5,
+            )),
+        ]);
 
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 
@@ -1198,18 +1148,16 @@ mod tests {
                         a,b,d";
 
         let diff_res_actual = csv_diff
-            .diff(
+            .diff_bytes(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
             .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![DiffRow::Modified {
-                deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-                field_indices: HashSet::from_iter(vec![2]),
-            }]),
-        };
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
+            field_indices: HashSet::from_iter(vec![2]),
+        }]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
@@ -1232,36 +1180,34 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new(
+        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerRayon>::new(
             CsvHashTaskSpawnerBuilderRayon::new(&rayon::ThreadPoolBuilder::new().build()?),
         )
         .primary_key_columns(vec![0, 1])
         .build()?
-        .diff(
+        .diff_bytes(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )?;
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![
-                DiffRow::Modified {
-                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
-                    field_indices: HashSet::from_iter(vec![2]),
-                },
-                DiffRow::Deleted(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["d", "e", "f"]),
-                    3,
-                )),
-                DiffRow::Added(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["d", "f", "f"]),
-                    4,
-                )),
-            ]),
-        };
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRow::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
+                field_indices: HashSet::from_iter(vec![2]),
+            },
+            DiffByteRow::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+            DiffByteRow::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "f", "f"]),
+                4,
+            )),
+        ]);
 
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 
@@ -1276,7 +1222,7 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,d";
 
-        let diff_res_actual = CsvDiff::new()?.diff(
+        let diff_res_actual = CsvDiff::new()?.diff_bytes(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         );
@@ -1310,7 +1256,7 @@ mod tests {
                         header1,header2,header3,header4\n\
                         a,b,d";
 
-        let diff_res_actual = CsvDiff::new()?.diff(
+        let diff_res_actual = CsvDiff::new()?.diff_bytes(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         );
@@ -1352,33 +1298,31 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerCrossbeam>::new(
+        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerCrossbeam>::new(
             CsvHashTaskSpawnerBuilderCrossbeam::new(),
         )
         .primary_key_columns(vec![0, 1])
         .build()?
-        .diff(
+        .diff_bytes(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )
         .unwrap();
-        let diff_res_expected = DiffResult::Different {
-            diff_records: DiffRecords(vec![
-                DiffRow::Modified {
-                    deleted: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-                    added: RecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
-                    field_indices: HashSet::from_iter(vec![2]),
-                },
-                DiffRow::Deleted(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["d", "e", "f"]),
-                    3,
-                )),
-                DiffRow::Added(RecordLineInfo::new(
-                    csv::ByteRecord::from(vec!["d", "f", "f"]),
-                    4,
-                )),
-            ]),
-        };
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRow::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
+                field_indices: HashSet::from_iter(vec![2]),
+            },
+            DiffByteRow::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+            DiffByteRow::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "f", "f"]),
+                4,
+            )),
+        ]);
 
         let diff_actual = diff_res_actual.sort_by_line();
         let diff_expected = diff_res_expected.sort_by_line();
