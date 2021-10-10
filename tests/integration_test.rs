@@ -39,10 +39,9 @@ mod integration_test {
     #[test]
     fn create_instance_with_builder_and_diff() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = csv_diff::csv_diff::CsvDiffBuilder::new(
-            CsvHashTaskSpawnerBuilderRayon::new(&thread_pool),
-        )
-        .build()?;
+        let csv_diff = csv_diff::csv_diff::CsvDiffBuilder::new()
+            .rayon_thread_pool(&thread_pool)
+            .build()?;
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -72,11 +71,10 @@ mod integration_test {
     #[test]
     fn create_instance_with_builder_set_all_and_diff() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = csv_diff::csv_diff::CsvDiffBuilder::new(
-            CsvHashTaskSpawnerBuilderRayon::new(&thread_pool),
-        )
-        .primary_key_columns(std::iter::once(0))
-        .build()?;
+        let csv_diff = csv_diff::csv_diff::CsvDiffBuilder::new()
+            .rayon_thread_pool(&thread_pool)
+            .primary_key_columns(std::iter::once(0))
+            .build()?;
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -203,6 +201,7 @@ mod integration_test {
                 CsvHashTaskSpawnerCustom::new(self.pool_size)
             }
         }
+        #[cfg(not(feature = "rayon-threads"))]
         #[test]
         fn create_instance_with_builder_custom_scoped_threads_and_diff(
         ) -> Result<(), Box<dyn Error>> {

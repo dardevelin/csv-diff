@@ -15,6 +15,7 @@ use crossbeam_channel::Receiver;
 use csv::Reader;
 use std::io::{Read, Seek};
 use std::iter::FromIterator;
+use std::marker::PhantomData;
 use std::{collections::HashSet, iter::Iterator};
 use thiserror::Error;
 
@@ -25,15 +26,23 @@ pub struct CsvDiff<T: CsvHashTaskSpawner> {
 }
 
 #[derive(Debug)]
-pub struct CsvDiffBuilder<T: CsvHashTaskSpawner> {
+pub struct CsvDiffBuilder<'tp, T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
+    #[cfg(feature = "rayon-threads")]
+    hash_task_spawner: Option<CsvHashTaskSpawnerRayon<'tp>>,
+    #[cfg(feature = "rayon-threads")]
+    _phantom: PhantomData<T>,
+    #[cfg(not(feature = "rayon-threads"))]
+    _phantom: PhantomData<&'tp T>,
+    #[cfg(not(feature = "rayon-threads"))]
     hash_task_spawner: T,
 }
 
-impl<T> CsvDiffBuilder<T>
+impl<'tp, T> CsvDiffBuilder<'tp, T>
 where
     T: CsvHashTaskSpawner,
 {
+    #[cfg(not(feature = "rayon-threads"))]
     pub fn new<B>(csv_hash_task_spawner_builder: B) -> Self
     where
         B: CsvHashTaskSpawnerBuilder<T>,
@@ -41,6 +50,7 @@ where
         Self {
             primary_key_columns: std::iter::once(0).collect(),
             hash_task_spawner: csv_hash_task_spawner_builder.build(),
+            _phantom: PhantomData::default(),
         }
     }
 
@@ -49,11 +59,45 @@ where
         self
     }
 
+    #[cfg(not(feature = "rayon-threads"))]
     pub fn build(self) -> Result<CsvDiff<T>, CsvDiffBuilderError> {
         if !self.primary_key_columns.is_empty() {
             Ok(CsvDiff {
                 primary_key_columns: self.primary_key_columns,
                 hash_task_spawner: self.hash_task_spawner,
+            })
+        } else {
+            Err(CsvDiffBuilderError::NoPrimaryKeyColumns)
+        }
+    }
+}
+
+#[cfg(feature = "rayon-threads")]
+impl<'tp> CsvDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
+    pub fn new() -> Self {
+        Self {
+            primary_key_columns: std::iter::once(0).collect(),
+            hash_task_spawner: None,
+            _phantom: PhantomData::default(),
+        }
+    }
+
+    pub fn rayon_thread_pool(mut self, thread_pool: &'tp rayon::ThreadPool) -> Self {
+        self.hash_task_spawner = Some(CsvHashTaskSpawnerBuilderRayon::new(thread_pool).build());
+        self
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    pub fn build(self) -> Result<CsvDiff<CsvHashTaskSpawnerRayon<'tp>>, CsvDiffBuilderError> {
+        if !self.primary_key_columns.is_empty() {
+            Ok(CsvDiff {
+                primary_key_columns: self.primary_key_columns,
+                hash_task_spawner: self.hash_task_spawner.unwrap_or_else(|| {
+                    CsvHashTaskSpawnerRayon::new(RayonScope::with_thread_pool_owned(
+                        // TODO: do proper error handling, but closure is a problem here
+                        rayon::ThreadPoolBuilder::new().build().unwrap(),
+                    ))
+                }),
             })
         } else {
             Err(CsvDiffBuilderError::NoPrimaryKeyColumns)
@@ -1095,7 +1139,8 @@ mod tests {
     ) -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
         let expected = CsvDiffBuilderError::NoPrimaryKeyColumns;
-        let actual = CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(&thread_pool))
+        let actual = CsvDiffBuilder::new()
+            .rayon_thread_pool(&thread_pool)
             .primary_key_columns(std::iter::empty())
             .build();
 
@@ -1109,11 +1154,10 @@ mod tests {
     #[test]
     fn builder_without_specified_primary_key_columns_is_ok() -> Result<(), Box<dyn Error>> {
         // it is ok, because it gets a sensible default value
-        assert!(CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
-            &rayon::ThreadPoolBuilder::new().build()?
-        ),)
-        .build()
-        .is_ok());
+        assert!(CsvDiffBuilder::new()
+            .rayon_thread_pool(&rayon::ThreadPoolBuilder::new().build()?)
+            .build()
+            .is_ok());
         Ok(())
     }
 
@@ -1121,8 +1165,9 @@ mod tests {
     #[test]
     fn diff_created_with_existing_thread_pool_works() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff =
-            CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(&thread_pool)).build()?;
+        let csv_diff = CsvDiffBuilder::new()
+            .rayon_thread_pool(&thread_pool)
+            .build()?;
 
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1164,15 +1209,14 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderRayon::new(
-            &rayon::ThreadPoolBuilder::new().build()?,
-        ))
-        .primary_key_columns(vec![0, 1])
-        .build()?
-        .diff_bytes(
-            Cursor::new(csv_left.as_bytes()),
-            Cursor::new(csv_right.as_bytes()),
-        )?;
+        let mut diff_res_actual = CsvDiffBuilder::new()
+            .rayon_thread_pool(&rayon::ThreadPoolBuilder::new().build()?)
+            .primary_key_columns(vec![0, 1])
+            .build()?
+            .diff_bytes(
+                Cursor::new(csv_left.as_bytes()),
+                Cursor::new(csv_right.as_bytes()),
+            )?;
         let mut diff_res_expected = DiffByteRecords(vec![
             DiffByteRow::Modify {
                 delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
