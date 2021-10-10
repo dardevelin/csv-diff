@@ -90,7 +90,7 @@ pub struct CsvHashTaskSpawnerRayon<'tp> {
 
 #[cfg(feature = "rayon-threads")]
 impl<'tp> CsvHashTaskSpawnerRayon<'tp> {
-    pub fn new(thread_scoper: RayonScope<'tp>) -> Self {
+    pub(crate) fn new(thread_scoper: RayonScope<'tp>) -> Self {
         Self { thread_scoper }
     }
 }
@@ -130,7 +130,7 @@ pub struct CsvHashTaskSpawnerCrossbeam {
 
 #[cfg(feature = "crossbeam-utils")]
 impl CsvHashTaskSpawnerCrossbeam {
-    pub fn new(thread_scoper: CrossbeamScope) -> Self {
+    pub(crate) fn new(thread_scoper: CrossbeamScope) -> Self {
         Self { thread_scoper }
     }
 }
