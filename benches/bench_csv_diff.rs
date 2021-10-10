@@ -43,7 +43,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             |b, (csv_left, csv_right)| {
                 b.iter(|| {
                     csv_diff
-                        .diff(
+                        .diff_bytes(
                             Cursor::new(csv_left.as_slice()),
                             Cursor::new(csv_left.as_slice()),
                         )
