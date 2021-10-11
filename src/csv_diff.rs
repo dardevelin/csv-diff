@@ -92,12 +92,12 @@ impl<'tp> CsvDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
         if !self.primary_key_columns.is_empty() {
             Ok(CsvDiff {
                 primary_key_columns: self.primary_key_columns,
-                hash_task_spawner: self.hash_task_spawner.unwrap_or_else(|| {
-                    CsvHashTaskSpawnerRayon::new(RayonScope::with_thread_pool_owned(
-                        // TODO: do proper error handling, but closure is a problem here
-                        rayon::ThreadPoolBuilder::new().build().unwrap(),
-                    ))
-                }),
+                hash_task_spawner: match self.hash_task_spawner {
+                    Some(x) => x,
+                    None => CsvHashTaskSpawnerRayon::new(RayonScope::with_thread_pool_owned(
+                        rayon::ThreadPoolBuilder::new().build()?,
+                    )),
+                },
             })
         } else {
             Err(CsvDiffBuilderError::NoPrimaryKeyColumns)
@@ -105,10 +105,13 @@ impl<'tp> CsvDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
     }
 }
 
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error)]
 pub enum CsvDiffBuilderError {
     #[error("No primary key columns have been specified. You need to provide at least one column index.")]
     NoPrimaryKeyColumns,
+    #[cfg(feature = "rayon-threads")]
+    #[error("An error occured when trying to build the rayon thread pool.")]
+    ThreadPoolBuildError(#[from] rayon::ThreadPoolBuildError),
 }
 
 #[derive(Debug, Error)]
@@ -1145,7 +1148,10 @@ mod tests {
             .build();
 
         assert!(actual.is_err());
-        assert_eq!(expected, actual.unwrap_err());
+        assert!(matches!(
+            actual,
+            Err(CsvDiffBuilderError::NoPrimaryKeyColumns)
+        ));
         assert_eq!(expected.to_string(), "No primary key columns have been specified. You need to provide at least one column index.");
         Ok(())
     }
