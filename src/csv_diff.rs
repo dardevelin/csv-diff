@@ -235,8 +235,6 @@ where
 mod tests {
 
     use super::*;
-    #[cfg(feature = "rayon-threads")]
-    use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderRayon;
     use crate::diff_result::DiffByteRecords;
     use crate::diff_row::{ByteRecordLineInfo, DiffByteRow};
     use pretty_assertions::assert_eq;
