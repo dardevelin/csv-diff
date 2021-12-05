@@ -21,58 +21,56 @@ use thiserror::Error;
 
 /// Compare two [CSVs](https://en.wikipedia.org/wiki/Comma-separated_values) with each other.
 ///
-/// `CsvDiff` uses scoped threads internally for comparison.
+/// `CsvByteDiff` uses scoped threads internally for comparison.
 /// By default, it uses [rayon's scoped threads within a rayon thread pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html#method.scope).
 /// See also [`rayon_thread_pool`](CsvDiffBuilder::rayon_thread_pool) on [`CsvDiffBuilder`](CsvDiffBuilder)
 /// for using an existing [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html)
-/// when creating `CsvDiff`.
+/// when creating `CsvByteDiff`.
 ///
-/// # Example: create `CsvDiff` with default values and compare two CSVs byte-wise
-/// ```
-/// use std::io::Cursor;
-/// use csv_diff::csv_diff::CsvDiff;
-/// use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRow};
-/// use std::collections::HashSet;
-/// use std::iter::FromIterator;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-///
-/// // some csv data with a header, where the first column is a unique id
-/// let csv_data_left = "id,name,kind\n\
-///                      1,lemon,fruit\n\
-///                      2,strawberry,fruit";
-///
-/// let csv_data_right = "id,name,kind\n\
-///                       1,lemon,fruit\n\
-///                       2,strawberry,nut";
-///
-/// let csv_diff = CsvDiff::new()?;
-/// let mut diff_byte_records = csv_diff.diff_bytes(
-///     // we need to wrap our bytes in a cursor, because it needs to be `Seek`able
-///     Cursor::new(csv_data_left.as_bytes()),
-///     Cursor::new(csv_data_right.as_bytes()),
-/// )?;
-///
-/// diff_byte_records.sort_by_line();
-///
-/// let diff_byte_rows = diff_byte_records.as_slice();
-///
-/// assert_eq!(
-///     diff_byte_rows,
-///     &[DiffByteRow::Modify {
-///         delete: ByteRecordLineInfo::new(
-///             csv::ByteRecord::from(vec!["2", "strawberry", "fruit"]),
-///             3
-///         ),
-///         add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["2", "strawberry", "nut"]), 3),
-///         field_indices: HashSet::from_iter(vec![2])
-///     }]
-/// );
-///
-/// Ok(())
-/// }
-/// ```
+/// # Example: create `CsvByteDiff` with default values and compare two CSVs byte-wise
+#[cfg_attr(
+    feature = "rayon-threads",
+    doc = r##"
+```
+use std::io::Cursor;
+use csv_diff::csv_diff::CsvByteDiff;
+use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRow};
+use std::collections::HashSet;
+use std::iter::FromIterator;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+// some csv data with a header, where the first column is a unique id
+let csv_data_left = "id,name,kind\n\
+                     1,lemon,fruit\n\
+                     2,strawberry,fruit";
+let csv_data_right = "id,name,kind\n\
+                      1,lemon,fruit\n\
+                      2,strawberry,nut";
+let csv_byte_diff = CsvByteDiff::new()?;
+let mut diff_byte_records = csv_byte_diff.diff(
+    // we need to wrap our bytes in a cursor, because it needs to be `Seek`able
+    Cursor::new(csv_data_left.as_bytes()),
+    Cursor::new(csv_data_right.as_bytes()),
+)?;
+diff_byte_records.sort_by_line();
+let diff_byte_rows = diff_byte_records.as_slice();
+assert_eq!(
+    diff_byte_rows,
+    &[DiffByteRow::Modify {
+        delete: ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["2", "strawberry", "fruit"]),
+            3
+        ),
+        add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["2", "strawberry", "nut"]), 3),
+        field_indices: HashSet::from_iter(vec![2])
+    }]
+);
+Ok(())
+}
+```
+"##
+)]
 #[derive(Debug)]
-pub struct CsvDiff<T: CsvHashTaskSpawner> {
+pub struct CsvByteDiff<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
     hash_task_spawner: T,
 }
@@ -112,9 +110,9 @@ where
     }
 
     #[cfg(not(feature = "rayon-threads"))]
-    pub fn build(self) -> Result<CsvDiff<T>, CsvDiffBuilderError> {
+    pub fn build(self) -> Result<CsvByteDiff<T>, CsvDiffBuilderError> {
         if !self.primary_key_columns.is_empty() {
-            Ok(CsvDiff {
+            Ok(CsvByteDiff {
                 primary_key_columns: self.primary_key_columns,
                 hash_task_spawner: self.hash_task_spawner,
             })
@@ -140,9 +138,9 @@ impl<'tp> CsvDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
     }
 
     #[cfg(feature = "rayon-threads")]
-    pub fn build(self) -> Result<CsvDiff<CsvHashTaskSpawnerRayon<'tp>>, CsvDiffBuilderError> {
+    pub fn build(self) -> Result<CsvByteDiff<CsvHashTaskSpawnerRayon<'tp>>, CsvDiffBuilderError> {
         if !self.primary_key_columns.is_empty() {
-            Ok(CsvDiff {
+            Ok(CsvByteDiff {
                 primary_key_columns: self.primary_key_columns,
                 hash_task_spawner: match self.hash_task_spawner {
                     Some(x) => x,
@@ -174,7 +172,7 @@ pub enum CsvDiffNewError {
 }
 
 #[cfg(feature = "rayon-threads")]
-impl CsvDiff<CsvHashTaskSpawnerRayon<'_>> {
+impl CsvByteDiff<CsvHashTaskSpawnerRayon<'_>> {
     pub fn new() -> Result<Self, CsvDiffNewError> {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
@@ -188,7 +186,7 @@ impl CsvDiff<CsvHashTaskSpawnerRayon<'_>> {
 }
 
 #[cfg(feature = "crossbeam-utils")]
-impl CsvDiff<CsvHashTaskSpawnerCrossbeam> {
+impl CsvByteDiff<CsvHashTaskSpawnerCrossbeam> {
     pub fn new() -> Self {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
@@ -199,11 +197,11 @@ impl CsvDiff<CsvHashTaskSpawnerCrossbeam> {
     }
 }
 
-impl<T> CsvDiff<T>
+impl<T> CsvByteDiff<T>
 where
     T: CsvHashTaskSpawner,
 {
-    pub fn diff_bytes<R>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffByteRecords>
+    pub fn diff<R>(&self, csv_left: R, csv_right: R) -> csv::Result<DiffByteRecords>
     where
         R: Read + Seek + Send,
     {
@@ -298,8 +296,8 @@ mod tests {
         let csv_left = "";
         let csv_right = "";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -316,8 +314,8 @@ mod tests {
         let csv_left = "header1,header2,header3";
         let csv_right = "header1,header2,header3";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -338,8 +336,8 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -360,8 +358,8 @@ mod tests {
                         header1,header2,header3\n\
                         ༼,౪,༽";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -382,8 +380,8 @@ mod tests {
                         header1,header2,header3\n\
                         ༼,౪,༼";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -408,8 +406,8 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -433,8 +431,8 @@ mod tests {
                         header1,header2,header3\n\
                         ";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -457,8 +455,8 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,d";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -483,8 +481,8 @@ mod tests {
                         header1,header2,header3\n\
                         a,c,d";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -511,8 +509,8 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -535,8 +533,8 @@ mod tests {
                         d,e,f\n\
                         a,b,c";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -560,8 +558,8 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -588,8 +586,8 @@ mod tests {
                         x,y,z\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -616,8 +614,8 @@ mod tests {
                         d,e,f\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -644,8 +642,8 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -671,8 +669,8 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -698,8 +696,8 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -726,8 +724,8 @@ mod tests {
                         d,e,f\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -757,8 +755,8 @@ mod tests {
                         a,x,c\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -787,8 +785,8 @@ mod tests {
                         d,x,f\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -818,8 +816,8 @@ mod tests {
                         a,b,c\n\
                         x,y,z";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -848,8 +846,8 @@ mod tests {
                         d,e,f\n\
                         x,x,z";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -879,8 +877,8 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -910,8 +908,8 @@ mod tests {
                         g,h,i\n\
                         x,y,z";
 
-        let mut diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let mut diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -948,8 +946,8 @@ mod tests {
                         x,y,z\n\
                         g,h,i";
 
-        let mut diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let mut diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -985,8 +983,8 @@ mod tests {
                         a,b,d\n\
                         x,y,z";
 
-        let mut diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let mut diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -1029,8 +1027,8 @@ mod tests {
                         j,k,l\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let mut diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -1064,8 +1062,8 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let mut diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let mut diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -1101,8 +1099,8 @@ mod tests {
                         d,e,f\n\
                         g,h,x";
 
-        let mut diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let mut diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -1145,8 +1143,8 @@ mod tests {
                         x,y,z\n\
                         j,k,x\n";
 
-        let mut diff_res_actual = CsvDiff::new()?
-            .diff_bytes(
+        let mut diff_res_actual = CsvByteDiff::new()?
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -1233,7 +1231,7 @@ mod tests {
                         a,b,d";
 
         let diff_res_actual = csv_diff
-            .diff_bytes(
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )
@@ -1269,7 +1267,7 @@ mod tests {
             .rayon_thread_pool(&rayon::ThreadPoolBuilder::new().build()?)
             .primary_key_columns(vec![0, 1])
             .build()?
-            .diff_bytes(
+            .diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )?;
@@ -1306,7 +1304,7 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,d";
 
-        let diff_res_actual = CsvDiff::new()?.diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         );
@@ -1340,7 +1338,7 @@ mod tests {
                         header1,header2,header3,header4\n\
                         a,b,d";
 
-        let diff_res_actual = CsvDiff::new()?.diff_bytes(
+        let diff_res_actual = CsvByteDiff::new()?.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         );
@@ -1387,7 +1385,7 @@ mod tests {
         )
         .primary_key_columns(vec![0, 1])
         .build()?
-        .diff_bytes(
+        .diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )

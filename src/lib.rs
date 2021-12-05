@@ -16,8 +16,8 @@ with each other to find differences.
 
 # Overview
 The most important types you will use are:
-1. [`CsvDiff`](csv_diff::CsvDiff) for comparing two CSVs.
-2. [`DiffByteRecords`](diff_result::DiffByteRecords) for getting the actual differences between the compared CSVs.
+1. [`CsvByteDiff`](csv_diff::CsvByteDiff) for comparing two CSVs byte-wise.
+2. [`DiffByteRecords`](diff_result::DiffByteRecords) for getting the actual differences between the compared CSVs as raw bytes.
 */
 
 pub mod csv_diff;

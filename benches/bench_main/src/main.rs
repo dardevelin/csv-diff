@@ -1,11 +1,10 @@
 use criterion::black_box;
 use csv_diff::csv_diff::*;
-use csv_diff::diff_result::DiffRecords;
 use std::io::Cursor;
 use utils::csv_generator::*;
 
-fn main() {
-    let csv_diff = CsvDiff::new();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let csv_diff = CsvByteDiff::new()?;
 
     let (csv_gen_left, csv_gen_right) = (
         CsvGenerator::new(1_000_000, 9),
@@ -22,4 +21,5 @@ fn main() {
             )
             .unwrap(),
     );
+    Ok(())
 }

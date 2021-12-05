@@ -1,7 +1,5 @@
 #[cfg(test)]
 mod integration_test {
-    #[cfg(feature = "rayon-threads")]
-    use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderRayon;
     use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRow};
     use pretty_assertions::assert_eq;
     use std::{collections::HashSet, error::Error, io::Cursor, iter::FromIterator};
@@ -9,14 +7,14 @@ mod integration_test {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn create_default_instance_and_diff() -> Result<(), Box<dyn Error>> {
-        let csv_diff = csv_diff::csv_diff::CsvDiff::new()?;
+        let csv_diff = csv_diff::csv_diff::CsvByteDiff::new()?;
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
         let csv_right = "\
                         header1,header2,header3\n\
                         a,b,d";
-        let mut diff_res = csv_diff.diff_bytes(
+        let mut diff_res = csv_diff.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )?;
@@ -48,7 +46,7 @@ mod integration_test {
         let csv_right = "\
                         header1,header2,header3\n\
                         a,b,d";
-        let mut diff_res = csv_diff.diff_bytes(
+        let mut diff_res = csv_diff.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )?;
@@ -81,7 +79,7 @@ mod integration_test {
         let csv_right = "\
                         header1,header2,header3\n\
                         a,b,d";
-        let mut diff_res = csv_diff.diff_bytes(
+        let mut diff_res = csv_diff.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )?;
@@ -105,7 +103,7 @@ mod integration_test {
     fn create_instance_with_builder_crossbeam_and_diff() -> Result<(), Box<dyn Error>> {
         use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderCrossbeam;
 
-        let csv_diff =
+        let csv_byte_diff =
             csv_diff::csv_diff::CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderCrossbeam::new())
                 .build()?;
         let csv_left = "\
@@ -114,7 +112,7 @@ mod integration_test {
         let csv_right = "\
                         header1,header2,header3\n\
                         a,b,d";
-        let mut diff_res = csv_diff.diff_bytes(
+        let mut diff_res = csv_byte_diff.diff(
             Cursor::new(csv_left.as_bytes()),
             Cursor::new(csv_right.as_bytes()),
         )?;
@@ -205,7 +203,7 @@ mod integration_test {
         #[test]
         fn create_instance_with_builder_custom_scoped_threads_and_diff(
         ) -> Result<(), Box<dyn Error>> {
-            let csv_diff =
+            let csv_byte_diff =
                 csv_diff::csv_diff::CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderCustom::new(4))
                     .primary_key_columns(std::iter::once(0))
                     .build()?;
@@ -215,7 +213,7 @@ mod integration_test {
             let csv_right = "\
                             header1,header2,header3\n\
                             a,b,d";
-            let mut diff_res = csv_diff.diff_bytes(
+            let mut diff_res = csv_byte_diff.diff(
                 Cursor::new(csv_left.as_bytes()),
                 Cursor::new(csv_right.as_bytes()),
             )?;
