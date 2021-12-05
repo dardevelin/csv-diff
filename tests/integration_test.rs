@@ -25,7 +25,7 @@ mod integration_test {
         let diff_rows_expected = vec![DiffByteRow::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-            field_indices: HashSet::from_iter(vec![2]),
+            field_indices: vec![2],
         }];
 
         assert_eq!(diff_rows_actual, diff_rows_expected);
@@ -57,7 +57,7 @@ mod integration_test {
         let diff_rows_expected = vec![DiffByteRow::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-            field_indices: HashSet::from_iter(vec![2]),
+            field_indices: vec![2],
         }];
 
         assert_eq!(diff_rows_actual, diff_rows_expected);
@@ -90,7 +90,7 @@ mod integration_test {
         let diff_rows_expected = vec![DiffByteRow::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-            field_indices: HashSet::from_iter(vec![2]),
+            field_indices: vec![2],
         }];
 
         assert_eq!(diff_rows_actual, diff_rows_expected);
@@ -123,7 +123,7 @@ mod integration_test {
         let diff_rows_expected = vec![DiffByteRow::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-            field_indices: HashSet::from_iter(vec![2]),
+            field_indices: vec![2],
         }];
 
         assert_eq!(diff_rows_actual, diff_rows_expected);
@@ -224,7 +224,7 @@ mod integration_test {
             let diff_rows_expected = vec![DiffByteRow::Modify {
                 delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
                 add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-                field_indices: HashSet::from_iter(vec![2]),
+                field_indices: vec![2],
             }];
 
             assert_eq!(diff_rows_actual, diff_rows_expected);

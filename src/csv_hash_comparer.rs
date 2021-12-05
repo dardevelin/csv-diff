@@ -109,10 +109,10 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                         .enumerate()
                                         .zip(right_byte_record.iter())
                                         .fold(
-                                            HashSet::new(),
+                                            Vec::new(),
                                             |mut acc, ((idx, field_left), field_right)| {
                                                 if field_left != field_right {
-                                                    acc.insert(idx);
+                                                    acc.push(idx);
                                                 }
                                                 acc
                                             },
@@ -196,10 +196,10 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                         .enumerate()
                                         .zip(right_byte_record.iter())
                                         .fold(
-                                            HashSet::new(),
+                                            Vec::new(),
                                             |mut acc, ((idx, field_left), field_right)| {
                                                 if field_left != field_right {
-                                                    acc.insert(idx);
+                                                    acc.push(idx);
                                                 }
                                                 acc
                                             },
