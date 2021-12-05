@@ -19,6 +19,58 @@ use std::marker::PhantomData;
 use std::{collections::HashSet, iter::Iterator};
 use thiserror::Error;
 
+/// Compare two [CSVs](https://en.wikipedia.org/wiki/Comma-separated_values) with each other.
+///
+/// `CsvDiff` uses scoped threads internally for comparison.
+/// By default, it uses [rayon's scoped threads within a rayon thread pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html#method.scope).
+/// See also [`rayon_thread_pool`](CsvDiffBuilder::rayon_thread_pool) on [`CsvDiffBuilder`](CsvDiffBuilder)
+/// for using an existing [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html)
+/// when creating `CsvDiff`.
+///
+/// # Example: create `CsvDiff` with default values and compare two CSVs byte-wise
+/// ```
+/// use std::io::Cursor;
+/// use csv_diff::csv_diff::CsvDiff;
+/// use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRow};
+/// use std::collections::HashSet;
+/// use std::iter::FromIterator;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+///
+/// // some csv data with a header, where the first column is a unique id
+/// let csv_data_left = "id,name,kind\n\
+///                      1,lemon,fruit\n\
+///                      2,strawberry,fruit";
+///
+/// let csv_data_right = "id,name,kind\n\
+///                       1,lemon,fruit\n\
+///                       2,strawberry,nut";
+///
+/// let csv_diff = CsvDiff::new()?;
+/// let mut diff_byte_records = csv_diff.diff_bytes(
+///     // we need to wrap our bytes in a cursor, because it needs to be `Seek`able
+///     Cursor::new(csv_data_left.as_bytes()),
+///     Cursor::new(csv_data_right.as_bytes()),
+/// )?;
+///
+/// diff_byte_records.sort_by_line();
+///
+/// let diff_byte_rows = diff_byte_records.as_slice();
+///
+/// assert_eq!(
+///     diff_byte_rows,
+///     &[DiffByteRow::Modify {
+///         delete: ByteRecordLineInfo::new(
+///             csv::ByteRecord::from(vec!["2", "strawberry", "fruit"]),
+///             3
+///         ),
+///         add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["2", "strawberry", "nut"]), 3),
+///         field_indices: HashSet::from_iter(vec![2])
+///     }]
+/// );
+///
+/// Ok(())
+/// }
+/// ```
 #[derive(Debug)]
 pub struct CsvDiff<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
