@@ -11,7 +11,7 @@ use crate::thread_scope_strategy::CrossbeamScope;
 #[cfg(feature = "rayon-threads")]
 use crate::thread_scope_strategy::RayonScope;
 use crate::{
-    csv_parse_result::RecordHash, csv_parser_hasher::CsvParserHasherSender,
+    csv::Csv, csv_parse_result::RecordHash, csv_parser_hasher::CsvParserHasherSender,
     thread_scope_strategy::ThreadScoper,
 };
 use crate::{
@@ -28,7 +28,7 @@ where
     sender: Sender<StackVec<CsvLeftRightParseResult>>,
     sender_total_lines: Sender<u64>,
     sender_csv_reader: Sender<csv::Result<Reader<R>>>,
-    csv: R,
+    csv: Csv<R>,
 }
 
 impl<R> CsvHashTaskSenders<R>
@@ -39,7 +39,7 @@ where
         sender: Sender<StackVec<CsvLeftRightParseResult>>,
         sender_total_lines: Sender<u64>,
         sender_csv_reader: Sender<csv::Result<Reader<R>>>,
-        csv: R,
+        csv: Csv<R>,
     ) -> Self {
         Self {
             sender,
