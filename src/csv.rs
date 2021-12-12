@@ -21,3 +21,31 @@ impl<R: Read + Send + Seek> From<Csv<R>> for csv::Reader<R> {
             .from_reader(csv.reader)
     }
 }
+
+pub struct CsvBuilder<R> {
+    reader: R,
+    headers: bool,
+}
+
+impl<R: Read + Send + Seek> CsvBuilder<R> {
+    pub fn new(reader: R) -> Self {
+        Self {
+            reader,
+            headers: true,
+        }
+    }
+
+    pub fn headers(self, yes: bool) -> Self {
+        Self {
+            headers: yes,
+            ..self
+        }
+    }
+
+    pub fn build(self) -> Csv<R> {
+        Csv {
+            reader: self.reader,
+            headers: self.headers,
+        }
+    }
+}

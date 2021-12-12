@@ -311,6 +311,30 @@ mod tests {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
+    fn diff_no_headers_empty_no_diff() -> Result<(), Box<dyn Error>> {
+        use crate::csv::CsvBuilder;
+
+        let csv_left = "";
+        let csv_right = "";
+
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
+                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                    .headers(false)
+                    .build(),
+                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                    .headers(false)
+                    .build(),
+            )
+            .unwrap();
+        let diff_res_expected = DiffByteRecords(vec![]);
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_empty_with_header_no_diff() -> Result<(), Box<dyn Error>> {
         let csv_left = "header1,header2,header3";
         let csv_right = "header1,header2,header3";
@@ -351,6 +375,80 @@ mod tests {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
+    fn diff_one_line_no_header_no_diff() -> Result<(), Box<dyn Error>> {
+        use crate::csv::CsvBuilder;
+
+        let csv_left = "\
+                        a,b,c";
+        let csv_right = "\
+                        a,b,c";
+
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
+                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                    .headers(false)
+                    .build(),
+                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                    .headers(false)
+                    .build(),
+            )
+            .unwrap();
+        let diff_res_expected = DiffByteRecords(vec![]);
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_both_empty_but_one_has_header_and_the_other_has_none_both_with_correct_header_flag_no_diff(
+    ) -> Result<(), Box<dyn Error>> {
+        use crate::csv::CsvBuilder;
+
+        let csv_left = "\
+                        header1,header2,header3";
+        let csv_right = "";
+
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
+                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                    .headers(true)
+                    .build(),
+                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                    .headers(false)
+                    .build(),
+            )
+            .unwrap();
+        let diff_res_expected = DiffByteRecords(vec![]);
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_both_empty_but_one_has_header_and_the_other_has_none_both_with_header_flag_true_no_diff(
+    ) -> Result<(), Box<dyn Error>> {
+        use crate::csv::CsvBuilder;
+
+        let csv_left = "\
+                        header1,header2,header3";
+        let csv_right = "";
+
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
+                Csv::new(Cursor::new(csv_left.as_bytes())),
+                Csv::new(Cursor::new(csv_right.as_bytes())),
+            )
+            .unwrap();
+        let diff_res_expected = DiffByteRecords(vec![]);
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_one_line_with_header_crazy_characters_no_diff() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -363,6 +461,31 @@ mod tests {
             .diff(
                 Csv::new(Cursor::new(csv_left.as_bytes())),
                 Csv::new(Cursor::new(csv_right.as_bytes())),
+            )
+            .unwrap();
+        let diff_res_expected = DiffByteRecords(vec![]);
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_one_line_one_has_headers_one_does_not_no_diff() -> Result<(), Box<dyn Error>> {
+        use crate::csv::CsvBuilder;
+
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        a,b,c";
+
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
+                Csv::new(Cursor::new(csv_left.as_bytes())),
+                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                    .headers(false)
+                    .build(),
             )
             .unwrap();
         let diff_res_expected = DiffByteRecords(vec![]);
@@ -424,6 +547,36 @@ mod tests {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
+    fn diff_one_line_one_with_header_and_one_not_added_one_line() -> Result<(), Box<dyn Error>> {
+        use crate::csv::CsvBuilder;
+
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        ";
+        let csv_right = "\
+                        a,b,c";
+
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
+                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                    .headers(true)
+                    .build(),
+                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                    .headers(false)
+                    .build(),
+            )
+            .unwrap();
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["a", "b", "c"]),
+            1,
+        ))]);
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_one_line_with_header_deleted_one_line() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -440,6 +593,35 @@ mod tests {
             .unwrap();
         let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Delete(
             ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+        )]);
+
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_one_line_one_with_header_and_one_not_deleted_one_line() -> Result<(), Box<dyn Error>> {
+        use crate::csv::CsvBuilder;
+
+        let csv_left = "\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        ";
+
+        let diff_res_actual = CsvByteDiff::new()?
+            .diff(
+                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                    .headers(false)
+                    .build(),
+                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                    .headers(true)
+                    .build(),
+            )
+            .unwrap();
+        let diff_res_expected = DiffByteRecords(vec![DiffByteRow::Delete(
+            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 1),
         )]);
 
         assert_eq!(diff_res_actual, diff_res_expected);
