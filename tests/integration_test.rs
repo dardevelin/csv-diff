@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod integration_test {
+    use csv_diff::csv::Csv;
     use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRow};
     use pretty_assertions::assert_eq;
     use std::{collections::HashSet, error::Error, io::Cursor, iter::FromIterator};
@@ -15,8 +16,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_diff.diff(
-            Cursor::new(csv_left.as_bytes()),
-            Cursor::new(csv_right.as_bytes()),
+            Csv::new(Cursor::new(csv_left.as_bytes())),
+            Csv::new(Cursor::new(csv_right.as_bytes())),
         )?;
 
         diff_res.sort_by_line();
@@ -25,7 +26,7 @@ mod integration_test {
         let diff_rows_expected = vec![DiffByteRow::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-            field_indices: HashSet::from_iter(vec![2]),
+            field_indices: vec![2],
         }];
 
         assert_eq!(diff_rows_actual, diff_rows_expected);
@@ -47,8 +48,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_diff.diff(
-            Cursor::new(csv_left.as_bytes()),
-            Cursor::new(csv_right.as_bytes()),
+            Csv::new(Cursor::new(csv_left.as_bytes())),
+            Csv::new(Cursor::new(csv_right.as_bytes())),
         )?;
 
         diff_res.sort_by_line();
@@ -57,7 +58,7 @@ mod integration_test {
         let diff_rows_expected = vec![DiffByteRow::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-            field_indices: HashSet::from_iter(vec![2]),
+            field_indices: vec![2],
         }];
 
         assert_eq!(diff_rows_actual, diff_rows_expected);
@@ -80,8 +81,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_diff.diff(
-            Cursor::new(csv_left.as_bytes()),
-            Cursor::new(csv_right.as_bytes()),
+            Csv::new(Cursor::new(csv_left.as_bytes())),
+            Csv::new(Cursor::new(csv_right.as_bytes())),
         )?;
 
         diff_res.sort_by_line();
@@ -90,7 +91,7 @@ mod integration_test {
         let diff_rows_expected = vec![DiffByteRow::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-            field_indices: HashSet::from_iter(vec![2]),
+            field_indices: vec![2],
         }];
 
         assert_eq!(diff_rows_actual, diff_rows_expected);
@@ -113,8 +114,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_byte_diff.diff(
-            Cursor::new(csv_left.as_bytes()),
-            Cursor::new(csv_right.as_bytes()),
+            Csv::new(Cursor::new(csv_left.as_bytes())),
+            Csv::new(Cursor::new(csv_right.as_bytes())),
         )?;
 
         diff_res.sort_by_line();
@@ -123,7 +124,7 @@ mod integration_test {
         let diff_rows_expected = vec![DiffByteRow::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-            field_indices: HashSet::from_iter(vec![2]),
+            field_indices: vec![2],
         }];
 
         assert_eq!(diff_rows_actual, diff_rows_expected);
@@ -214,8 +215,8 @@ mod integration_test {
                             header1,header2,header3\n\
                             a,b,d";
             let mut diff_res = csv_byte_diff.diff(
-                Cursor::new(csv_left.as_bytes()),
-                Cursor::new(csv_right.as_bytes()),
+                Csv::new(Cursor::new(csv_left.as_bytes())),
+                Csv::new(Cursor::new(csv_right.as_bytes())),
             )?;
 
             diff_res.sort_by_line();
@@ -224,7 +225,7 @@ mod integration_test {
             let diff_rows_expected = vec![DiffByteRow::Modify {
                 delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
                 add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
-                field_indices: HashSet::from_iter(vec![2]),
+                field_indices: vec![2],
             }];
 
             assert_eq!(diff_rows_actual, diff_rows_expected);

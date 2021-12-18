@@ -1,9 +1,11 @@
 use ahash::AHasher;
 use crossbeam_channel::Sender;
+use csv::Reader;
 use std::collections::HashSet;
 use std::hash::Hasher;
 use std::io::{Read, Seek};
 
+use crate::csv::Csv;
 use crate::csv_parse_result::{
     CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight, Position,
     RecordHash,
@@ -54,14 +56,14 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
         }
     }
     pub fn parse_and_hash<
-        R: Read + Seek,
+        R: Read + Seek + Send,
         T: CsvParseResult<CsvLeftRightParseResult, RecordHash>,
     >(
         &mut self,
-        csv: R,
+        csv: Csv<R>,
         primary_key_columns: &HashSet<usize>,
     ) -> csv::Result<csv::Reader<R>> {
-        let mut csv_reader = csv::Reader::from_reader(csv);
+        let mut csv_reader: Reader<R> = csv.into();
         let mut csv_record = csv::ByteRecord::new();
         // read first record in order to get the number of fields
         if csv_reader.read_byte_record(&mut csv_record)? {

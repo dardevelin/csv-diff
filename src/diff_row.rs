@@ -6,7 +6,7 @@ pub enum DiffByteRow {
     Modify {
         delete: ByteRecordLineInfo,
         add: ByteRecordLineInfo,
-        field_indices: HashSet<usize>,
+        field_indices: Vec<usize>,
     },
     Delete(ByteRecordLineInfo),
 }
