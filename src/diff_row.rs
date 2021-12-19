@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 #[derive(Debug, PartialEq)]
-pub enum DiffByteRow {
+pub enum DiffByteRecord {
     Add(ByteRecordLineInfo),
     Modify {
         delete: ByteRecordLineInfo,
@@ -11,7 +11,7 @@ pub enum DiffByteRow {
     Delete(ByteRecordLineInfo),
 }
 
-impl DiffByteRow {
+impl DiffByteRecord {
     pub fn line_num(&self) -> LineNum {
         match self {
             Self::Add(rli) | Self::Delete(rli) => LineNum::OneSide(rli.line),

@@ -20,7 +20,7 @@ pub(crate) struct CsvHashComparer<R: Read + Seek> {
     max_capacity_right_map: usize,
     csv_seek_left_reader: csv::Reader<R>,
     csv_seek_right_reader: csv::Reader<R>,
-    diff_records: Vec<DiffByteRow>,
+    diff_records: Vec<DiffByteRecord>,
 }
 
 impl<R: Read + std::io::Seek> CsvHashComparer<R> {
@@ -117,7 +117,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                                 acc
                                             },
                                         );
-                                    self.diff_records.push(DiffByteRow::Modify {
+                                    self.diff_records.push(DiffByteRecord::Modify {
                                         add: ByteRecordLineInfo::new(
                                             right_byte_record,
                                             pos_right.line,
@@ -204,7 +204,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                                 acc
                                             },
                                         );
-                                    self.diff_records.push(DiffByteRow::Modify {
+                                    self.diff_records.push(DiffByteRecord::Modify {
                                         add: ByteRecordLineInfo::new(
                                             right_byte_record,
                                             pos_right.line,
@@ -241,7 +241,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                         self.csv_seek_left_reader
                             .read_byte_record(&mut byte_record)
                             .expect("can be read");
-                        Some(DiffByteRow::Delete(ByteRecordLineInfo::new(
+                        Some(DiffByteRecord::Delete(ByteRecordLineInfo::new(
                             byte_record,
                             pos.line,
                         )))
@@ -262,7 +262,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                         self.csv_seek_right_reader
                             .read_byte_record(&mut byte_record)
                             .expect("can be read");
-                        Some(DiffByteRow::Add(ByteRecordLineInfo::new(
+                        Some(DiffByteRecord::Add(ByteRecordLineInfo::new(
                             byte_record,
                             pos.line,
                         )))

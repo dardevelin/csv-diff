@@ -1,7 +1,7 @@
 use crate::diff_row::*;
 
 #[derive(Debug, PartialEq)]
-pub struct DiffByteRecords(pub(crate) Vec<DiffByteRow>);
+pub struct DiffByteRecords(pub(crate) Vec<DiffByteRecord>);
 
 impl DiffByteRecords {
     pub fn sort_by_line(&mut self) {
@@ -54,32 +54,32 @@ impl DiffByteRecords {
         })
     }
 
-    pub fn as_slice(&self) -> &[DiffByteRow] {
+    pub fn as_slice(&self) -> &[DiffByteRecord] {
         self.0.as_slice()
     }
 
-    pub fn iter(&self) -> core::slice::Iter<'_, DiffByteRow> {
+    pub fn iter(&self) -> core::slice::Iter<'_, DiffByteRecord> {
         self.0.iter()
     }
 }
 
 impl IntoIterator for DiffByteRecords {
-    type Item = DiffByteRow;
-    type IntoIter = DiffRecordsIntoIterator;
+    type Item = DiffByteRecord;
+    type IntoIter = DiffByteRecordsIntoIterator;
 
     fn into_iter(self) -> Self::IntoIter {
-        DiffRecordsIntoIterator {
+        DiffByteRecordsIntoIterator {
             inner: self.0.into_iter(),
         }
     }
 }
 
-pub struct DiffRecordsIntoIterator {
-    inner: std::vec::IntoIter<DiffByteRow>,
+pub struct DiffByteRecordsIntoIterator {
+    inner: std::vec::IntoIter<DiffByteRecord>,
 }
 
-impl Iterator for DiffRecordsIntoIterator {
-    type Item = DiffByteRow;
+impl Iterator for DiffByteRecordsIntoIterator {
+    type Item = DiffByteRecord;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next()

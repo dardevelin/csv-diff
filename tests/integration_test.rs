@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod integration_test {
     use csv_diff::csv::Csv;
-    use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRow};
+    use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
     use pretty_assertions::assert_eq;
     use std::{collections::HashSet, error::Error, io::Cursor, iter::FromIterator};
 
@@ -23,7 +23,7 @@ mod integration_test {
         diff_res.sort_by_line();
         let diff_rows_actual = diff_res.as_slice();
 
-        let diff_rows_expected = vec![DiffByteRow::Modify {
+        let diff_rows_expected = vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
             field_indices: vec![2],
@@ -55,7 +55,7 @@ mod integration_test {
         diff_res.sort_by_line();
         let diff_rows_actual = diff_res.as_slice();
 
-        let diff_rows_expected = vec![DiffByteRow::Modify {
+        let diff_rows_expected = vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
             field_indices: vec![2],
@@ -88,7 +88,7 @@ mod integration_test {
         diff_res.sort_by_line();
         let diff_rows_actual = diff_res.as_slice();
 
-        let diff_rows_expected = vec![DiffByteRow::Modify {
+        let diff_rows_expected = vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
             field_indices: vec![2],
@@ -121,7 +121,7 @@ mod integration_test {
         diff_res.sort_by_line();
         let diff_rows_actual = diff_res.as_slice();
 
-        let diff_rows_expected = vec![DiffByteRow::Modify {
+        let diff_rows_expected = vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
             field_indices: vec![2],
@@ -222,7 +222,7 @@ mod integration_test {
             diff_res.sort_by_line();
             let diff_rows_actual = diff_res.as_slice();
 
-            let diff_rows_expected = vec![DiffByteRow::Modify {
+            let diff_rows_expected = vec![DiffByteRecord::Modify {
                 delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
                 add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
                 field_indices: vec![2],
