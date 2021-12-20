@@ -179,6 +179,14 @@ pub enum CsvDiffNewError {
 
 #[cfg(feature = "rayon-threads")]
 impl CsvByteDiff<CsvHashTaskSpawnerRayon<'_>> {
+    /// Constructs a new `CsvByteDiff<CsvHashTaskSpawnerRayon<'_>>` with a default configuration.
+    /// The values in the first column of each CSV will be declared as the primary key, in order
+    /// to match the CSV records against each other.
+    /// During the construction, a new [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html)
+    /// is created, which will be used later during the [comparison of CSVs](CsvByteDiff::diff).
+    ///
+    /// If you need to have more control over the configuration of `CsvByteDiff<CsvHashTaskSpawnerRayon<'_>>`,
+    /// consider using a [`CsvDiffBuilder`](CsvDiffBuilder) instead.
     pub fn new() -> Result<Self, CsvDiffNewError> {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
@@ -207,6 +215,55 @@ impl<T> CsvByteDiff<T>
 where
     T: CsvHashTaskSpawner,
 {
+    /// Compares `csv_left` with `csv_right` and returns the [CSV byte records](crate::diff_result::DiffByteRecords) that are different.
+    ///
+    /// [`Csv<R>`](Csv<R>) is a wrapper around a CSV reader with some configuration options.
+    ///
+    /// # Example
+    #[cfg_attr(
+        feature = "rayon-threads",
+        doc = r##"
+    use std::io::Cursor;
+    use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
+    use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
+    # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // some csv data with a header, where the first column is a unique id
+    let csv_data_left = "id,name,kind\n\
+                         1,lemon,fruit\n\
+                         2,strawberry,fruit";
+    let csv_data_right = "id,name,kind\n\
+                          1,lemon,fruit\n\
+                          2,strawberry,nut";
+
+    let csv_byte_diff = CsvByteDiff::new()?;
+
+    let mut diff_byte_records = csv_byte_diff.diff(
+        // we need to wrap our bytes in a cursor, because it needs to be `Seek`able
+        Csv::new(Cursor::new(csv_data_left.as_bytes())),
+        Csv::new(Cursor::new(csv_data_right.as_bytes())),
+    )?;
+
+    diff_byte_records.sort_by_line();
+
+    let diff_byte_rows = diff_byte_records.as_slice();
+
+    assert_eq!(
+        diff_byte_rows,
+        &[DiffByteRecord::Modify {
+            delete: ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["2", "strawberry", "fruit"]),
+                3
+            ),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["2", "strawberry", "nut"]), 3),
+            field_indices: vec![2]
+        }]
+    );
+    Ok(())
+    # }
+    "##
+    )]
     pub fn diff<R>(&self, csv_left: Csv<R>, csv_right: Csv<R>) -> csv::Result<DiffByteRecords>
     where
         R: Read + Seek + Send,
