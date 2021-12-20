@@ -1,5 +1,11 @@
 use crate::diff_row::*;
 
+/// Holds all information about the difference between two CSVs, after they have
+/// been compared with [`CsvByteDiff.diff`](crate::csv_diff::CsvByteDiff::diff).
+/// CSV records that are equal are __not__ stored in this structure.
+///
+/// Also, keep in mind, that differences are stored _unordered_ (with regard to the line in the CSV).
+/// You can use [`DiffByteRecords.sort_by_line`](DiffByteRecords::sort_by_line) to sort them in-place.
 #[derive(Debug, PartialEq)]
 pub struct DiffByteRecords(pub(crate) Vec<DiffByteRecord>);
 
