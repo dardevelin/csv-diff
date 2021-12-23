@@ -3,7 +3,7 @@ Find the difference between two CSVs - with ludicrous speed!🚀
 
 `csv-diff` is a crate for finding the difference between two CSVs.
 It is the fastest CSV-diffing library in the world!
-Comparing two 1,000,000 rows x 9 columns CSVs takes __under 500ms__ (when using [raw bytes](csv_diff::CsvDiff::diff_bytes)).
+Comparing two 1,000,000 rows x 9 columns CSVs takes __under 500ms__ (when using [raw bytes](csv_diff::CsvByteDiff::diff)).
 It is *thread-pool-agnostic*, meaning you can provide your own existing thread-pool
 or you can use the default [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html)
 that is used in this crate.
