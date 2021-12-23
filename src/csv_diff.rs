@@ -24,7 +24,7 @@ use thiserror::Error;
 ///
 /// `CsvByteDiff` uses scoped threads internally for comparison.
 /// By default, it uses [rayon's scoped threads within a rayon thread pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html#method.scope).
-/// See also [`rayon_thread_pool`](CsvDiffBuilder::rayon_thread_pool) on [`CsvDiffBuilder`](CsvDiffBuilder)
+/// See also [`rayon_thread_pool`](CsvByteDiffBuilder::rayon_thread_pool) on [`CsvByteDiffBuilder`](CsvByteDiffBuilder)
 /// for using an existing [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html)
 /// when creating `CsvByteDiff`.
 ///
@@ -82,7 +82,7 @@ pub struct CsvByteDiff<T: CsvHashTaskSpawner> {
 }
 
 #[derive(Debug)]
-pub struct CsvDiffBuilder<'tp, T: CsvHashTaskSpawner> {
+pub struct CsvByteDiffBuilder<'tp, T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
     #[cfg(feature = "rayon-threads")]
     hash_task_spawner: Option<CsvHashTaskSpawnerRayon<'tp>>,
@@ -94,7 +94,7 @@ pub struct CsvDiffBuilder<'tp, T: CsvHashTaskSpawner> {
     hash_task_spawner: T,
 }
 
-impl<'tp, T> CsvDiffBuilder<'tp, T>
+impl<'tp, T> CsvByteDiffBuilder<'tp, T>
 where
     T: CsvHashTaskSpawner,
 {
@@ -116,20 +116,20 @@ where
     }
 
     #[cfg(not(feature = "rayon-threads"))]
-    pub fn build(self) -> Result<CsvByteDiff<T>, CsvDiffBuilderError> {
+    pub fn build(self) -> Result<CsvByteDiff<T>, CsvByteDiffBuilderError> {
         if !self.primary_key_columns.is_empty() {
             Ok(CsvByteDiff {
                 primary_key_columns: self.primary_key_columns,
                 hash_task_spawner: self.hash_task_spawner,
             })
         } else {
-            Err(CsvDiffBuilderError::NoPrimaryKeyColumns)
+            Err(CsvByteDiffBuilderError::NoPrimaryKeyColumns)
         }
     }
 }
 
 #[cfg(feature = "rayon-threads")]
-impl<'tp> CsvDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
+impl<'tp> CsvByteDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
     pub fn new() -> Self {
         Self {
             primary_key_columns: std::iter::once(0).collect(),
@@ -144,7 +144,9 @@ impl<'tp> CsvDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
     }
 
     #[cfg(feature = "rayon-threads")]
-    pub fn build(self) -> Result<CsvByteDiff<CsvHashTaskSpawnerRayon<'tp>>, CsvDiffBuilderError> {
+    pub fn build(
+        self,
+    ) -> Result<CsvByteDiff<CsvHashTaskSpawnerRayon<'tp>>, CsvByteDiffBuilderError> {
         if !self.primary_key_columns.is_empty() {
             Ok(CsvByteDiff {
                 primary_key_columns: self.primary_key_columns,
@@ -156,13 +158,13 @@ impl<'tp> CsvDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
                 },
             })
         } else {
-            Err(CsvDiffBuilderError::NoPrimaryKeyColumns)
+            Err(CsvByteDiffBuilderError::NoPrimaryKeyColumns)
         }
     }
 }
 
 #[derive(Debug, Error)]
-pub enum CsvDiffBuilderError {
+pub enum CsvByteDiffBuilderError {
     #[error("No primary key columns have been specified. You need to provide at least one column index.")]
     NoPrimaryKeyColumns,
     #[cfg(feature = "rayon-threads")]
@@ -186,7 +188,7 @@ impl CsvByteDiff<CsvHashTaskSpawnerRayon<'_>> {
     /// is created, which will be used later during the [comparison of CSVs](CsvByteDiff::diff).
     ///
     /// If you need to have more control over the configuration of `CsvByteDiff<CsvHashTaskSpawnerRayon<'_>>`,
-    /// consider using a [`CsvDiffBuilder`](CsvDiffBuilder) instead.
+    /// consider using a [`CsvByteDiffBuilder`](CsvByteDiffBuilder) instead.
     pub fn new() -> Result<Self, CsvDiffNewError> {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
@@ -1461,8 +1463,8 @@ mod tests {
     fn builder_without_primary_key_columns_is_no_primary_key_columns_err(
     ) -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let expected = CsvDiffBuilderError::NoPrimaryKeyColumns;
-        let actual = CsvDiffBuilder::new()
+        let expected = CsvByteDiffBuilderError::NoPrimaryKeyColumns;
+        let actual = CsvByteDiffBuilder::new()
             .rayon_thread_pool(&thread_pool)
             .primary_key_columns(std::iter::empty())
             .build();
@@ -1470,7 +1472,7 @@ mod tests {
         assert!(actual.is_err());
         assert!(matches!(
             actual,
-            Err(CsvDiffBuilderError::NoPrimaryKeyColumns)
+            Err(CsvByteDiffBuilderError::NoPrimaryKeyColumns)
         ));
         assert_eq!(expected.to_string(), "No primary key columns have been specified. You need to provide at least one column index.");
         Ok(())
@@ -1480,7 +1482,7 @@ mod tests {
     #[test]
     fn builder_without_specified_primary_key_columns_is_ok() -> Result<(), Box<dyn Error>> {
         // it is ok, because it gets a sensible default value
-        assert!(CsvDiffBuilder::new()
+        assert!(CsvByteDiffBuilder::new()
             .rayon_thread_pool(&rayon::ThreadPoolBuilder::new().build()?)
             .build()
             .is_ok());
@@ -1491,7 +1493,7 @@ mod tests {
     #[test]
     fn diff_created_with_existing_thread_pool_works() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = CsvDiffBuilder::new()
+        let csv_diff = CsvByteDiffBuilder::new()
             .rayon_thread_pool(&thread_pool)
             .build()?;
 
@@ -1535,7 +1537,7 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiffBuilder::new()
+        let mut diff_res_actual = CsvByteDiffBuilder::new()
             .rayon_thread_pool(&rayon::ThreadPoolBuilder::new().build()?)
             .primary_key_columns(vec![0, 1])
             .build()?
@@ -1638,7 +1640,7 @@ mod tests {
     // TODO: this is our only test for the "crossbeam-utils" feature;
     // we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-utils"
     fn diff_multiple_lines_with_header_combined_key_added_deleted_modified(
-    ) -> Result<(), CsvDiffBuilderError> {
+    ) -> Result<(), CsvByteDiffBuilderError> {
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -1652,7 +1654,7 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvDiffBuilder::<CsvHashTaskSpawnerCrossbeam>::new(
+        let mut diff_res_actual = CsvByteDiffBuilder::<CsvHashTaskSpawnerCrossbeam>::new(
             CsvHashTaskSpawnerBuilderCrossbeam::new(),
         )
         .primary_key_columns(vec![0, 1])

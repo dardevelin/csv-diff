@@ -38,7 +38,7 @@ mod integration_test {
     #[test]
     fn create_instance_with_builder_and_diff() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = csv_diff::csv_diff::CsvDiffBuilder::new()
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new()
             .rayon_thread_pool(&thread_pool)
             .build()?;
         let csv_left = "\
@@ -70,7 +70,7 @@ mod integration_test {
     #[test]
     fn create_instance_with_builder_set_all_and_diff() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = csv_diff::csv_diff::CsvDiffBuilder::new()
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new()
             .rayon_thread_pool(&thread_pool)
             .primary_key_columns(std::iter::once(0))
             .build()?;
@@ -105,7 +105,7 @@ mod integration_test {
         use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderCrossbeam;
 
         let csv_byte_diff =
-            csv_diff::csv_diff::CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderCrossbeam::new())
+            csv_diff::csv_diff::CsvByteDiffBuilder::new(CsvHashTaskSpawnerBuilderCrossbeam::new())
                 .build()?;
         let csv_left = "\
                         header1,header2,header3\n\
@@ -204,10 +204,11 @@ mod integration_test {
         #[test]
         fn create_instance_with_builder_custom_scoped_threads_and_diff(
         ) -> Result<(), Box<dyn Error>> {
-            let csv_byte_diff =
-                csv_diff::csv_diff::CsvDiffBuilder::new(CsvHashTaskSpawnerBuilderCustom::new(4))
-                    .primary_key_columns(std::iter::once(0))
-                    .build()?;
+            let csv_byte_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new(
+                CsvHashTaskSpawnerBuilderCustom::new(4),
+            )
+            .primary_key_columns(std::iter::once(0))
+            .build()?;
             let csv_left = "\
                             header1,header2,header3\n\
                             a,b,c";
