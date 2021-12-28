@@ -151,6 +151,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum HashMapValue {
     Initial(u64, Position),
     Equal,
