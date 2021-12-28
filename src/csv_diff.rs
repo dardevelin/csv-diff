@@ -1345,6 +1345,44 @@ mod tests {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
+    fn diff_multiple_lines_with_header_modified_at_end_added_at_end() -> Result<(), Box<dyn Error>>
+    {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        x,y,z";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        x,y,a\n\
+                        g,h,i";
+
+        let mut diff_res_actual = CsvByteDiff::new()?
+            .diff(
+                Csv::new(Cursor::new(csv_left.as_bytes())),
+                Csv::new(Cursor::new(csv_right.as_bytes())),
+            )
+            .unwrap();
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 3),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "a"]), 3),
+                field_indices: vec![2],
+            },
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["g", "h", "i"]),
+                4,
+            )),
+        ]);
+
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
     fn diff_multiple_lines_with_header_added_multiple() -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\

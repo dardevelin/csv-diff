@@ -66,6 +66,42 @@ impl DiffByteRecords {
         })
     }
 
+    /// Return the `DiffByteRecord`s as a single slice.
+    /// # Example
+    #[cfg_attr(
+        feature = "rayon-threads",
+        doc = r##"
+    use std::io::Cursor;
+    use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
+    # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // some csv data with a header, where the first column is a unique id
+    let csv_data_left = "id,name,kind\n\
+                         1,lemon,fruit\n\
+                         2,strawberry,fruit";
+    let csv_data_right = "id,name,kind\n\
+                          1,lemon,fruit\n\
+                          2,strawberry,nut\n\
+                          3,cherry,fruit";
+
+    let csv_byte_diff = CsvByteDiff::new()?;
+
+    let mut diff_byte_records = csv_byte_diff.diff(
+        Csv::new(Cursor::new(csv_data_left.as_bytes())),
+        Csv::new(Cursor::new(csv_data_right.as_bytes())),
+    )?;
+    
+    let diff_byte_record_slice = diff_byte_records.as_slice();
+
+    assert_eq!(
+        diff_byte_record_slice.len(),
+        2
+    );
+    Ok(())
+    # }
+    "##
+    )]
     pub fn as_slice(&self) -> &[DiffByteRecord] {
         self.0.as_slice()
     }
