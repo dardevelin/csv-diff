@@ -6,10 +6,16 @@ use crate::diff_row::*;
 ///
 /// Also, keep in mind, that differences are stored _unordered_ (with regard to the line in the CSV).
 /// You can use [`DiffByteRecords.sort_by_line`](DiffByteRecords::sort_by_line) to sort them in-place.
+///
+/// See the example on [`CsvByteDiff`](crate::csv_diff::CsvByteDiff) for general usage.
 #[derive(Debug, PartialEq)]
 pub struct DiffByteRecords(pub(crate) Vec<DiffByteRecord>);
 
 impl DiffByteRecords {
+    /// Sort the underlying [`DiffByteRecord`](crate::diff_row::DiffByteRecord)s by line.
+    ///
+    /// Note that comparison is done in parallel. Therefore, __without calling this method__, the resulting `DiffByteRecord`s are out of order
+    /// after the comparison (with regard to their line in the original CSV).
     pub fn sort_by_line(&mut self) {
         self.0.sort_by(|a, b| match (a.line_num(), b.line_num()) {
             (LineNum::OneSide(line_num_a), LineNum::OneSide(line_num_b)) => {
@@ -64,6 +70,7 @@ impl DiffByteRecords {
         self.0.as_slice()
     }
 
+    /// Return an iterator over the `DiffByteRecord`s.
     pub fn iter(&self) -> core::slice::Iter<'_, DiffByteRecord> {
         self.0.iter()
     }
@@ -80,6 +87,7 @@ impl IntoIterator for DiffByteRecords {
     }
 }
 
+/// Consuming iterator that can be created from [`DiffByteRecords`](DiffByteRecords)
 pub struct DiffByteRecordsIntoIterator {
     inner: std::vec::IntoIter<DiffByteRecord>,
 }
