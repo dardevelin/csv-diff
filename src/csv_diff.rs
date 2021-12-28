@@ -81,6 +81,64 @@ pub struct CsvByteDiff<T: CsvHashTaskSpawner> {
     hash_task_spawner: T,
 }
 
+/// Create a [`CsvByteDiff`](CsvByteDiff) with configuration options.
+/// # Example: create a `CsvByteDiff`, where column 1 and column 3 are treated as a compound primary key.
+#[cfg_attr(
+    feature = "rayon-threads",
+    doc = r##"
+```
+use std::io::Cursor;
+use csv_diff::{csv_diff::{CsvByteDiff, CsvByteDiffBuilder}, csv::Csv};
+use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
+use std::collections::HashSet;
+use std::iter::FromIterator;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+// some csv data with a header, where the first column and third column represent a compound key
+let csv_data_left = "\
+                    id,name,commit_sha\n\
+                    1,lemon,efae52\n\
+                    2,strawberry,a33411"; // this csv line is seen as "Deleted" and not "Modified"
+                                          // because "id" and "commit_sha" are different and both columns
+                                          // _together_ represent the primary key
+let csv_data_right = "\
+                    id,name,commit_sha\n\
+                    1,lemon,efae52\n\
+                    2,strawberry,ddef23"; // this csv line is seen as "Added" and not "Modified",
+                                          // because "id" and "commit_sha" are different and both columns
+                                          // _together_ represent the primary key
+
+let csv_byte_diff = CsvByteDiffBuilder::new()
+    .primary_key_columns([0usize, 2])
+    .build()?;
+
+let mut diff_byte_records = csv_byte_diff.diff(
+    // we need to wrap our bytes in a cursor, because it needs to be `Seek`able
+    Csv::new(Cursor::new(csv_data_left.as_bytes())),
+    Csv::new(Cursor::new(csv_data_right.as_bytes())),
+)?;
+
+diff_byte_records.sort_by_line();
+
+let diff_byte_rows = diff_byte_records.as_slice();
+
+assert_eq!(
+    diff_byte_rows,
+    &[
+        DiffByteRecord::Delete(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["2", "strawberry", "a33411"]),
+            3
+        ),),
+        DiffByteRecord::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["2", "strawberry", "ddef23"]),
+            3
+        ),)
+    ]
+);
+Ok(())
+# }
+```
+"##
+)]
 #[derive(Debug)]
 pub struct CsvByteDiffBuilder<'tp, T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
