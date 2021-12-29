@@ -246,6 +246,39 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                             pos.line,
                         )))
                     }
+                    HashMapValue::Modified(pos_left, pos_right) => {
+                        self.csv_seek_left_reader
+                            .seek(pos_left.into())
+                            .expect("must find the given position");
+                        self.csv_seek_right_reader
+                            .seek(pos_right.into())
+                            .expect("must find the given position");
+                        let mut left_byte_record = csv::ByteRecord::new();
+                        // TODO: proper error handling (although we are safe here)
+                        self.csv_seek_left_reader
+                            .read_byte_record(&mut left_byte_record)
+                            .expect("can be read");
+                        let mut right_byte_record = csv::ByteRecord::new();
+                        // TODO: proper error handling (although we are safe here)
+                        self.csv_seek_right_reader
+                            .read_byte_record(&mut right_byte_record)
+                            .expect("can be read");
+                        let fields_modified = left_byte_record
+                            .iter()
+                            .enumerate()
+                            .zip(right_byte_record.iter())
+                            .fold(Vec::new(), |mut acc, ((idx, field_left), field_right)| {
+                                if field_left != field_right {
+                                    acc.push(idx);
+                                }
+                                acc
+                            });
+                        Some(DiffByteRecord::Modify {
+                            add: ByteRecordLineInfo::new(right_byte_record, pos_right.line),
+                            delete: ByteRecordLineInfo::new(left_byte_record, pos_left.line),
+                            field_indices: fields_modified,
+                        })
+                    }
                     _ => None,
                 }),
         );
@@ -266,6 +299,39 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                             byte_record,
                             pos.line,
                         )))
+                    }
+                    HashMapValue::Modified(pos_left, pos_right) => {
+                        self.csv_seek_left_reader
+                            .seek(pos_left.into())
+                            .expect("must find the given position");
+                        self.csv_seek_right_reader
+                            .seek(pos_right.into())
+                            .expect("must find the given position");
+                        let mut left_byte_record = csv::ByteRecord::new();
+                        // TODO: proper error handling (although we are safe here)
+                        self.csv_seek_left_reader
+                            .read_byte_record(&mut left_byte_record)
+                            .expect("can be read");
+                        let mut right_byte_record = csv::ByteRecord::new();
+                        // TODO: proper error handling (although we are safe here)
+                        self.csv_seek_right_reader
+                            .read_byte_record(&mut right_byte_record)
+                            .expect("can be read");
+                        let fields_modified = left_byte_record
+                            .iter()
+                            .enumerate()
+                            .zip(right_byte_record.iter())
+                            .fold(Vec::new(), |mut acc, ((idx, field_left), field_right)| {
+                                if field_left != field_right {
+                                    acc.push(idx);
+                                }
+                                acc
+                            });
+                        Some(DiffByteRecord::Modify {
+                            add: ByteRecordLineInfo::new(right_byte_record, pos_right.line),
+                            delete: ByteRecordLineInfo::new(left_byte_record, pos_left.line),
+                            field_indices: fields_modified,
+                        })
                     }
                     _ => None,
                 }),
