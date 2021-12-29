@@ -1,6 +1,6 @@
 [package]
 name = "csv-diff"
-version = "0.1.0"
+version = "0.1.0-alpha"
 authors = ["Jan Riemer <janriemer@tutanota.de>"]
 edition = "2018"
 
