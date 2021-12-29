@@ -20,6 +20,8 @@ The most important types you will use are:
 2. [`DiffByteRecords`](diff_result::DiffByteRecords) for getting the actual differences between the compared CSVs as raw bytes.
 */
 
+#![forbid(unsafe_code)]
+
 pub mod csv;
 pub mod csv_diff;
 mod csv_hash_comparer;
