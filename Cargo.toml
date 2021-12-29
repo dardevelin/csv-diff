@@ -23,6 +23,7 @@ scoped-pool = "1"
 [features]
 default = ["rayon-threads"]
 rayon-threads = ["rayon"]
+crossbeam-threads = ["crossbeam-utils"]
 
 [[bench]]
 name = "bench_csv_diff"

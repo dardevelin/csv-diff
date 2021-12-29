@@ -1,7 +1,7 @@
 use crate::csv::Csv;
 use crate::csv_hash_task_spawner::CsvHashTaskSenders;
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilder;
-#[cfg(feature = "crossbeam-utils")]
+#[cfg(feature = "crossbeam-threads")]
 use crate::csv_hash_task_spawner::{
     CsvHashTaskSpawnerBuilderCrossbeam, CsvHashTaskSpawnerCrossbeam,
 };
@@ -259,7 +259,7 @@ impl CsvByteDiff<CsvHashTaskSpawnerRayon<'_>> {
     }
 }
 
-#[cfg(feature = "crossbeam-utils")]
+#[cfg(feature = "crossbeam-threads")]
 impl CsvByteDiff<CsvHashTaskSpawnerCrossbeam> {
     pub fn new() -> Self {
         let mut instance = Self {
@@ -1693,10 +1693,10 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "crossbeam-utils")]
+    #[cfg(feature = "crossbeam-threads")]
     #[test]
-    // TODO: this is our only test for the "crossbeam-utils" feature;
-    // we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-utils"
+    // TODO: this is our only test for the "crossbeam-threads" feature;
+    // we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-threads"
     fn diff_multiple_lines_with_header_combined_key_added_deleted_modified(
     ) -> Result<(), CsvByteDiffBuilderError> {
         let csv_left = "\

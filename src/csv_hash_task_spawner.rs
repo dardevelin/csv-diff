@@ -6,7 +6,7 @@ use std::{
 use crossbeam_channel::Sender;
 use csv::Reader;
 
-#[cfg(feature = "crossbeam-utils")]
+#[cfg(feature = "crossbeam-threads")]
 use crate::thread_scope_strategy::CrossbeamScope;
 #[cfg(feature = "rayon-threads")]
 use crate::thread_scope_strategy::RayonScope;
@@ -123,19 +123,19 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'_> {
 }
 
 #[derive(Debug)]
-#[cfg(feature = "crossbeam-utils")]
+#[cfg(feature = "crossbeam-threads")]
 pub struct CsvHashTaskSpawnerCrossbeam {
     thread_scoper: CrossbeamScope,
 }
 
-#[cfg(feature = "crossbeam-utils")]
+#[cfg(feature = "crossbeam-threads")]
 impl CsvHashTaskSpawnerCrossbeam {
     pub(crate) fn new(thread_scoper: CrossbeamScope) -> Self {
         Self { thread_scoper }
     }
 }
 
-#[cfg(feature = "crossbeam-utils")]
+#[cfg(feature = "crossbeam-threads")]
 impl CsvHashTaskSpawner for CsvHashTaskSpawnerCrossbeam {
     fn spawn_hashing_tasks_and_send_result<R>(
         &self,
@@ -187,17 +187,17 @@ impl<'tp> CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerRayon<'tp>>
     }
 }
 
-#[cfg(feature = "crossbeam-utils")]
+#[cfg(feature = "crossbeam-threads")]
 pub struct CsvHashTaskSpawnerBuilderCrossbeam;
 
-#[cfg(feature = "crossbeam-utils")]
+#[cfg(feature = "crossbeam-threads")]
 impl CsvHashTaskSpawnerBuilderCrossbeam {
     pub fn new() -> Self {
         Self
     }
 }
 
-#[cfg(feature = "crossbeam-utils")]
+#[cfg(feature = "crossbeam-threads")]
 impl CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerCrossbeam> for CsvHashTaskSpawnerBuilderCrossbeam {
     fn build(self) -> CsvHashTaskSpawnerCrossbeam {
         CsvHashTaskSpawnerCrossbeam::new(CrossbeamScope::new())

@@ -99,7 +99,7 @@ mod integration_test {
         Ok(())
     }
 
-    #[cfg(feature = "crossbeam-utils")]
+    #[cfg(feature = "crossbeam-threads")]
     #[test]
     fn create_instance_with_builder_crossbeam_and_diff() -> Result<(), Box<dyn Error>> {
         use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderCrossbeam;

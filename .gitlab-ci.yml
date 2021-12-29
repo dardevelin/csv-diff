@@ -48,4 +48,4 @@ test:cargo:
     - rustc --version && cargo --version && cargo tarpaulin --version # Print version info for debugging
     #- cargo tarpaulin -v  tarpaulin has a bug, where it segfaults in ci; for now we disable it
     - cargo test -v # testing default features
-    - cargo test --features crossbeam-utils --no-default-features -v # testing optional features
+    - cargo test --features crossbeam-threads --no-default-features -v # testing optional features
