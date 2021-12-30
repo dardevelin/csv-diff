@@ -42,4 +42,12 @@ impl ByteRecordLineInfo {
     pub fn new(byte_record: csv::ByteRecord, line: u64) -> Self {
         Self { byte_record, line }
     }
+
+    pub fn byte_record(&self) -> &csv::ByteRecord {
+        &self.byte_record
+    }
+
+    pub fn into_byte_record(self) -> csv::ByteRecord {
+        self.byte_record
+    }
 }
