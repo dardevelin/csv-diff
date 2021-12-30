@@ -108,7 +108,7 @@ let csv_data_right = "\
                                           // _together_ represent the primary key
 
 let csv_byte_diff = CsvByteDiffBuilder::new()
-    .primary_key_columns([0usize, 2])
+    .primary_key_columns(vec![0usize, 2])
     .build()?;
 
 let mut diff_byte_records = csv_byte_diff.diff(

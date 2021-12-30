@@ -29,7 +29,7 @@ mod integration_test {
             field_indices: vec![2],
         }];
 
-        assert_eq!(diff_rows_actual, diff_rows_expected);
+        assert_eq!(diff_rows_actual, diff_rows_expected.as_slice());
 
         Ok(())
     }
@@ -61,7 +61,7 @@ mod integration_test {
             field_indices: vec![2],
         }];
 
-        assert_eq!(diff_rows_actual, diff_rows_expected);
+        assert_eq!(diff_rows_actual, diff_rows_expected.as_slice());
 
         Ok(())
     }
@@ -94,7 +94,7 @@ mod integration_test {
             field_indices: vec![2],
         }];
 
-        assert_eq!(diff_rows_actual, diff_rows_expected);
+        assert_eq!(diff_rows_actual, diff_rows_expected.as_slice());
 
         Ok(())
     }
