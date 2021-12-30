@@ -15,7 +15,6 @@ use crate::{csv_hash_comparer::CsvHashComparer, csv_hash_task_spawner::CsvHashTa
 use crossbeam_channel::Receiver;
 use csv::Reader;
 use std::io::{Read, Seek};
-use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::{collections::HashSet, iter::Iterator};
 use thiserror::Error;
@@ -411,7 +410,7 @@ mod tests {
     use crate::diff_result::DiffByteRecords;
     use crate::diff_row::{ByteRecordLineInfo, DiffByteRecord};
     use pretty_assertions::assert_eq;
-    use std::{error::Error, io::Cursor, iter::FromIterator};
+    use std::{error::Error, io::Cursor};
 
     #[cfg(feature = "rayon-threads")]
     #[test]
@@ -551,8 +550,6 @@ mod tests {
     #[test]
     fn diff_both_empty_but_one_has_header_and_the_other_has_none_both_with_header_flag_true_no_diff(
     ) -> Result<(), Box<dyn Error>> {
-        use crate::csv::CsvBuilder;
-
         let csv_left = "\
                         header1,header2,header3";
         let csv_right = "";

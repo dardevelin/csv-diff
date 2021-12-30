@@ -3,11 +3,8 @@ use crate::csv_parser_hasher::HashMapValue;
 use crate::csv_parser_hasher::StackVec;
 use crate::diff_result::*;
 use crate::diff_row::*;
-use std::io::{Cursor, Read};
-use std::{
-    collections::{HashMap, HashSet},
-    io::Seek,
-};
+use std::io::Read;
+use std::{collections::HashMap, io::Seek};
 
 type CsvHashValueMap = HashMap<u64, HashMapValue>;
 

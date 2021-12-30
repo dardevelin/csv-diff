@@ -3,7 +3,7 @@ mod integration_test {
     use csv_diff::csv::Csv;
     use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
     use pretty_assertions::assert_eq;
-    use std::{collections::HashSet, error::Error, io::Cursor, iter::FromIterator};
+    use std::{error::Error, io::Cursor};
 
     #[cfg(feature = "rayon-threads")]
     #[test]
