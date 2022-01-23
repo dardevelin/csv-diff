@@ -21,20 +21,14 @@ use crate::{
     csv_parser_hasher::StackVec,
 };
 
-pub struct CsvHashTaskSenders<R>
-where
-    R: Read + Seek + Send,
-{
+pub struct CsvHashTaskSenders<R: Read> {
     sender: Sender<StackVec<CsvLeftRightParseResult>>,
     sender_total_lines: Sender<u64>,
     sender_csv_reader: Sender<csv::Result<Reader<R>>>,
     csv: Csv<R>,
 }
 
-impl<R> CsvHashTaskSenders<R>
-where
-    R: Read + Seek + Send,
-{
+impl<R: Read> CsvHashTaskSenders<R> {
     pub(crate) fn new(
         sender: Sender<StackVec<CsvLeftRightParseResult>>,
         sender_total_lines: Sender<u64>,
@@ -51,13 +45,12 @@ where
 }
 
 pub trait CsvHashTaskSpawner {
-    fn spawn_hashing_tasks_and_send_result<R>(
+    fn spawn_hashing_tasks_and_send_result<R: Read + Seek + Send>(
         &self,
         csv_hash_task_senders_left: CsvHashTaskSenders<R>,
         csv_hash_task_senders_right: CsvHashTaskSenders<R>,
         primary_key_columns: &HashSet<usize>,
-    ) where
-        R: Read + Seek + Send;
+    );
 
     fn parse_hash_and_send_for_compare<R, P>(
         &self,

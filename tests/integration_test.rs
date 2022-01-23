@@ -7,7 +7,7 @@ mod integration_test {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn create_default_instance_and_diff() -> Result<(), Box<dyn Error>> {
+    fn create_default_instance_and_diff_with_cursor() -> Result<(), Box<dyn Error>> {
         let csv_diff = csv_diff::csv_diff::CsvByteDiff::new()?;
         let csv_left = "\
                         header1,header2,header3\n\
@@ -36,7 +36,36 @@ mod integration_test {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn create_instance_with_builder_and_diff() -> Result<(), Box<dyn Error>> {
+    fn create_default_instance_and_diff_without_cursor() -> Result<(), Box<dyn Error>> {
+        let csv_diff = csv_diff::csv_diff::CsvByteDiff::new()?;
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,d";
+        let mut diff_res = csv_diff.diff(
+            Csv::new(csv_left.as_bytes()),
+            Csv::new(csv_right.as_bytes()),
+        )?;
+
+        diff_res.sort_by_line();
+        let diff_rows_actual = diff_res.as_slice();
+
+        let diff_rows_expected = vec![DiffByteRecord::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
+            field_indices: vec![2],
+        }];
+
+        assert_eq!(diff_rows_actual, diff_rows_expected.as_slice());
+
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn create_instance_with_builder_and_diff_with_cursor() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
         let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new()
             .rayon_thread_pool(&thread_pool)
@@ -50,6 +79,38 @@ mod integration_test {
         let mut diff_res = csv_diff.diff(
             Csv::new(Cursor::new(csv_left.as_bytes())),
             Csv::new(Cursor::new(csv_right.as_bytes())),
+        )?;
+
+        diff_res.sort_by_line();
+        let diff_rows_actual = diff_res.as_slice();
+
+        let diff_rows_expected = vec![DiffByteRecord::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
+            field_indices: vec![2],
+        }];
+
+        assert_eq!(diff_rows_actual, diff_rows_expected.as_slice());
+
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn create_instance_with_builder_and_diff_without_cursor() -> Result<(), Box<dyn Error>> {
+        let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new()
+            .rayon_thread_pool(&thread_pool)
+            .build()?;
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,d";
+        let mut diff_res = csv_diff.diff(
+            Csv::new(csv_left.as_bytes()),
+            Csv::new(csv_right.as_bytes()),
         )?;
 
         diff_res.sort_by_line();
@@ -101,7 +162,7 @@ mod integration_test {
 
     #[cfg(feature = "crossbeam-threads")]
     #[test]
-    fn create_instance_with_builder_crossbeam_and_diff() -> Result<(), Box<dyn Error>> {
+    fn create_instance_with_builder_crossbeam_and_diff_with_cursor() -> Result<(), Box<dyn Error>> {
         use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderCrossbeam;
 
         let csv_byte_diff =
@@ -116,6 +177,40 @@ mod integration_test {
         let mut diff_res = csv_byte_diff.diff(
             Csv::new(Cursor::new(csv_left.as_bytes())),
             Csv::new(Cursor::new(csv_right.as_bytes())),
+        )?;
+
+        diff_res.sort_by_line();
+        let diff_rows_actual = diff_res.as_slice();
+
+        let diff_rows_expected = vec![DiffByteRecord::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
+            field_indices: vec![2],
+        }];
+
+        assert_eq!(diff_rows_actual, diff_rows_expected);
+
+        Ok(())
+    }
+
+    #[cfg(feature = "crossbeam-threads")]
+    #[test]
+    fn create_instance_with_builder_crossbeam_and_diff_without_cursor() -> Result<(), Box<dyn Error>>
+    {
+        use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderCrossbeam;
+
+        let csv_byte_diff =
+            csv_diff::csv_diff::CsvByteDiffBuilder::new(CsvHashTaskSpawnerBuilderCrossbeam::new())
+                .build()?;
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,d";
+        let mut diff_res = csv_byte_diff.diff(
+            Csv::new(csv_left.as_bytes()),
+            Csv::new(csv_right.as_bytes()),
         )?;
 
         diff_res.sort_by_line();

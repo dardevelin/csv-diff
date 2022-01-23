@@ -32,7 +32,6 @@ use thiserror::Error;
     feature = "rayon-threads",
     doc = r##"
 ```
-use std::io::Cursor;
 use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
 use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
 use std::collections::HashSet;
@@ -49,9 +48,8 @@ let csv_data_right = "id,name,kind\n\
 let csv_byte_diff = CsvByteDiff::new()?;
 
 let mut diff_byte_records = csv_byte_diff.diff(
-    // we need to wrap our bytes in a cursor, because it needs to be `Seek`able
-    Csv::new(Cursor::new(csv_data_left.as_bytes())),
-    Csv::new(Cursor::new(csv_data_right.as_bytes())),
+    Csv::new(csv_data_left.as_bytes()),
+    Csv::new(csv_data_right.as_bytes()),
 )?;
 
 diff_byte_records.sort_by_line();
@@ -86,7 +84,6 @@ pub struct CsvByteDiff<T: CsvHashTaskSpawner> {
     feature = "rayon-threads",
     doc = r##"
 ```
-use std::io::Cursor;
 use csv_diff::{csv_diff::{CsvByteDiff, CsvByteDiffBuilder}, csv::Csv};
 use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
 use std::collections::HashSet;
@@ -111,9 +108,8 @@ let csv_byte_diff = CsvByteDiffBuilder::new()
     .build()?;
 
 let mut diff_byte_records = csv_byte_diff.diff(
-    // we need to wrap our bytes in a cursor, because it needs to be `Seek`able
-    Csv::new(Cursor::new(csv_data_left.as_bytes())),
-    Csv::new(Cursor::new(csv_data_right.as_bytes())),
+    Csv::new(csv_data_left.as_bytes()),
+    Csv::new(csv_data_right.as_bytes()),
 )?;
 
 diff_byte_records.sort_by_line();
@@ -282,7 +278,6 @@ where
     #[cfg_attr(
         feature = "rayon-threads",
         doc = r##"
-    use std::io::Cursor;
     use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
     use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
     use std::collections::HashSet;
@@ -299,9 +294,8 @@ where
     let csv_byte_diff = CsvByteDiff::new()?;
 
     let mut diff_byte_records = csv_byte_diff.diff(
-        // we need to wrap our bytes in a cursor, because it needs to be `Seek`able
-        Csv::new(Cursor::new(csv_data_left.as_bytes())),
-        Csv::new(Cursor::new(csv_data_right.as_bytes())),
+        Csv::new(csv_data_left.as_bytes()),
+        Csv::new(csv_data_right.as_bytes()),
     )?;
 
     diff_byte_records.sort_by_line();
@@ -323,10 +317,11 @@ where
     # }
     "##
     )]
-    pub fn diff<R>(&self, csv_left: Csv<R>, csv_right: Csv<R>) -> csv::Result<DiffByteRecords>
-    where
-        R: Read + Seek + Send,
-    {
+    pub fn diff<R: Read + Seek + Send>(
+        &self,
+        csv_left: Csv<R>,
+        csv_right: Csv<R>,
+    ) -> csv::Result<DiffByteRecords> {
         use crossbeam_channel::unbounded;
 
         let (sender_total_lines_right, receiver_total_lines_right) = unbounded();
