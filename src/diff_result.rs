@@ -71,7 +71,6 @@ impl DiffByteRecords {
     #[cfg_attr(
         feature = "rayon-threads",
         doc = r##"
-    use std::io::Cursor;
     use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
     use std::collections::HashSet;
     use std::iter::FromIterator;
@@ -88,8 +87,8 @@ impl DiffByteRecords {
     let csv_byte_diff = CsvByteDiff::new()?;
 
     let mut diff_byte_records = csv_byte_diff.diff(
-        Csv::new(Cursor::new(csv_data_left.as_bytes())),
-        Csv::new(Cursor::new(csv_data_right.as_bytes())),
+        Csv::new(csv_data_left.as_bytes()),
+        Csv::new(csv_data_right.as_bytes()),
     )?;
     
     let diff_byte_record_slice = diff_byte_records.as_slice();
