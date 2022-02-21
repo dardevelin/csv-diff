@@ -7,7 +7,7 @@ use ahash::AHashMap as HashMap;
 use std::io::Read;
 use std::io::Seek;
 
-type CsvHashValueMap = HashMap<u64, HashMapValue>;
+type CsvHashValueMap = HashMap<u128, HashMapValue>;
 
 pub(crate) struct CsvHashComparer<R: Read + Seek> {
     csv_records_left_map: CsvHashValueMap,

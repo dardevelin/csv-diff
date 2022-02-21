@@ -19,13 +19,13 @@ pub enum CsvLeftRightParseResult {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct RecordHash {
-    pub(crate) key: u64,
-    pub(crate) record_hash: u64,
+    pub(crate) key: u128,
+    pub(crate) record_hash: u128,
     pub(crate) pos: Position,
 }
 
 impl RecordHash {
-    pub(crate) fn new(key: u64, record_hash: u64, pos: Position) -> Self {
+    pub(crate) fn new(key: u128, record_hash: u128, pos: Position) -> Self {
         Self {
             key,
             record_hash,
