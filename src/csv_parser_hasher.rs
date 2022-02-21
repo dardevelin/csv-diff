@@ -80,7 +80,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
 
             let mut records_buff: StackVec<CsvLeftRightParseResult> = smallvec::SmallVec::new();
 
-            let mut hasher = AHasher::default();
+            let mut hasher = xxhash_rust::xxh3::Xxh3::new();
             let record = csv_record_right_first;
             let key_fields: Vec<_> = fields_as_key
                 .iter()
@@ -91,21 +91,21 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                 for key_field in key_fields {
                     hasher.write(key_field);
                 }
-                let key = hasher.finish();
+                let key = hasher.digest128();
                 // TODO: don't hash all of it -> exclude the key fields (see below)
                 hasher.write(record.as_slice());
                 let pos = record.position().expect("a record position");
                 records_buff.push(
                     T::new(RecordHash::new(
                         key,
-                        hasher.finish(),
+                        hasher.digest128(),
                         Position::new(pos.byte(), pos.line()),
                     ))
                     .into_payload(),
                 );
                 let mut line = 2;
                 while csv_reader.read_byte_record(&mut csv_record)? {
-                    let mut hasher = AHasher::default();
+                    hasher.reset();
                     let key_fields = fields_as_key
                         .iter()
                         .filter_map(|k_idx| csv_record.get(**k_idx));
@@ -113,7 +113,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                     for key_field in key_fields {
                         hasher.write(key_field);
                     }
-                    let key = hasher.finish();
+                    let key = hasher.digest128();
                     // TODO: don't hash all of it -> exclude the key fields
                     // in order to still be efficient and do as few `write` calls as possible
                     // consider using `csv_record.range(...)` method
@@ -123,7 +123,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                         records_buff.push(
                             T::new(RecordHash::new(
                                 key,
-                                hasher.finish(),
+                                hasher.digest128(),
                                 Position::new(pos.byte(), pos.line()),
                             ))
                             .into_payload(),
@@ -153,7 +153,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
 
 #[derive(Debug)]
 pub(crate) enum HashMapValue {
-    Initial(u64, Position),
+    Initial(u128, Position),
     Equal,
     Modified(Position, Position),
 }
