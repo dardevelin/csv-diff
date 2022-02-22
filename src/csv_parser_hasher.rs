@@ -38,19 +38,13 @@ impl CsvParseResult<CsvLeftRightParseResult, RecordHash> for CsvParseResultRight
     }
 }
 
-pub(crate) const STACK_SIZE_VEC: usize = 8;
-pub(crate) type StackVec<T> = smallvec::SmallVec<[T; STACK_SIZE_VEC]>;
-
 pub(crate) struct CsvParserHasherSender<T> {
-    sender: Sender<StackVec<T>>,
+    sender: Sender<T>,
     sender_total_lines: Sender<u64>,
 }
 
 impl CsvParserHasherSender<CsvLeftRightParseResult> {
-    pub fn new(
-        sender: Sender<StackVec<CsvLeftRightParseResult>>,
-        sender_total_lines: Sender<u64>,
-    ) -> Self {
+    pub fn new(sender: Sender<CsvLeftRightParseResult>, sender_total_lines: Sender<u64>) -> Self {
         Self {
             sender,
             sender_total_lines,
@@ -91,7 +85,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                 // TODO: don't hash all of it -> exclude the key fields (see below)
                 let hash_record = record.hash_record();
                 let pos = record.position().expect("a record position");
-                records_buff.push(
+                self.sender.send(
                     T::new(RecordHash::new(
                         key,
                         hash_record,
@@ -105,7 +99,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                     let hash_record = csv_record.hash_record();
                     {
                         let pos = csv_record.position().expect("a record position");
-                        records_buff.push(
+                        self.sender.send(
                             T::new(RecordHash::new(
                                 key,
                                 hash_record,
@@ -113,19 +107,8 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                             ))
                             .into_payload(),
                         );
-                        if line % STACK_SIZE_VEC as u64 == 0 {
-                            let records_buff_full: StackVec<CsvLeftRightParseResult> =
-                                smallvec::SmallVec::from_slice(records_buff.as_slice());
-                            self.sender.send(records_buff_full).unwrap();
-                            records_buff.clear();
-                        }
                     }
                     line += 1;
-                }
-                // if our buffer has elements that have not been send over yet (our buffer is only partly filled),
-                // we send them over now
-                if !records_buff.is_empty() {
-                    self.sender.send(records_buff).unwrap();
                 }
                 self.sender_total_lines.send(line).unwrap();
             }

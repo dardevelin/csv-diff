@@ -1,4 +1,5 @@
 use crate::csv::Csv;
+use crate::csv_hash_receiver_comparer::CsvHashReceiverComparer;
 use crate::csv_hash_task_spawner::CsvHashTaskSenders;
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilder;
 #[cfg(feature = "crossbeam-threads")]
@@ -10,6 +11,7 @@ use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerBuilderRayon, CsvHashTaskSp
 use crate::csv_parse_result::CsvLeftRightParseResult;
 use crate::csv_parser_hasher::*;
 use crate::diff_result::DiffByteRecords;
+use crate::diff_result::DiffByteRecordsIter;
 use crate::thread_scope_strategy::*;
 use crate::{csv_hash_comparer::CsvHashComparer, csv_hash_task_spawner::CsvHashTaskSpawner};
 use crossbeam_channel::Receiver;
@@ -331,29 +333,41 @@ where
         let (sender_right, receiver) = unbounded();
         let sender_left = sender_right.clone();
 
-        self.hash_task_spawner.spawn_hashing_tasks_and_send_result(
-            CsvHashTaskSenders::new(
-                sender_left,
-                sender_total_lines_left,
-                sender_csv_reader_left,
-                csv_left,
-            ),
-            CsvHashTaskSenders::new(
-                sender_right,
-                sender_total_lines_right,
-                sender_csv_reader_right,
-                csv_right,
-            ),
-            &self.primary_key_columns,
-        );
+        self.hash_task_spawner
+            .spawn_hashing_tasks_and_send_result(
+                CsvHashTaskSenders::new(
+                    sender_left,
+                    sender_total_lines_left,
+                    sender_csv_reader_left,
+                    csv_left,
+                ),
+                CsvHashTaskSenders::new(
+                    sender_right,
+                    sender_total_lines_right,
+                    sender_csv_reader_right,
+                    csv_right,
+                ),
+                CsvHashReceiverComparer {
+                    receiver_total_lines_left,
+                    receiver_total_lines_right,
+                    receiver_csv_reader_left,
+                    receiver_csv_reader_right,
+                    receiver,
+                },
+                &self.primary_key_columns,
+            )
+            .recv()
+            .unwrap()
+            .map(|dbr| DiffByteRecords(dbr.collect()))
 
-        self.recv_hashes_and_compare(
-            receiver_total_lines_left,
-            receiver_total_lines_right,
-            receiver_csv_reader_left,
-            receiver_csv_reader_right,
-            receiver,
-        )
+        // self.recv_hashes_and_compare(
+        //     receiver_total_lines_left,
+        //     receiver_total_lines_right,
+        //     receiver_csv_reader_left,
+        //     receiver_csv_reader_right,
+        //     receiver,
+        // )
+        // .map(|dbr| DiffByteRecords(dbr.collect()))
     }
 
     fn recv_hashes_and_compare<R>(
@@ -362,39 +376,20 @@ where
         receiver_total_lines_right: Receiver<u64>,
         receiver_csv_reader_left: Receiver<csv::Result<Reader<R>>>,
         receiver_csv_reader_right: Receiver<csv::Result<Reader<R>>>,
-        receiver: Receiver<StackVec<CsvLeftRightParseResult>>,
-    ) -> csv::Result<DiffByteRecords>
+        receiver: Receiver<CsvLeftRightParseResult>,
+    ) -> csv::Result<DiffByteRecordsIter<R>>
     where
         R: Read + Seek + Send,
     {
-        let (total_lines_right, total_lines_left) = (
-            receiver_total_lines_right.recv().unwrap_or_default(),
-            receiver_total_lines_left.recv().unwrap_or_default(),
-        );
-        let (csv_reader_right_for_diff_seek, csv_reader_left_for_diff_seek) = (
-            receiver_csv_reader_right.recv().unwrap()?,
-            receiver_csv_reader_left.recv().unwrap()?,
-        );
-        let max_capacity_for_hash_map_right =
-            if total_lines_right / 100 < total_lines_right && total_lines_right / 100 == 0 {
-                total_lines_right
-            } else {
-                total_lines_right / 100
-            } as usize;
-        let max_capacity_for_hash_map_left =
-            if total_lines_left / 100 < total_lines_left && total_lines_left / 100 == 0 {
-                total_lines_left
-            } else {
-                total_lines_left / 100
-            } as usize;
+        let csv_hash_comparer = CsvHashReceiverComparer {
+            receiver_total_lines_left,
+            receiver_total_lines_right,
+            receiver_csv_reader_left,
+            receiver_csv_reader_right,
+            receiver,
+        };
 
-        let mut csv_hash_comparer = CsvHashComparer::with_capacity_and_reader(
-            max_capacity_for_hash_map_left,
-            max_capacity_for_hash_map_right,
-            csv_reader_left_for_diff_seek,
-            csv_reader_right_for_diff_seek,
-        );
-        csv_hash_comparer.compare_csv_left_right_parse_result(receiver)
+        csv_hash_comparer.recv_hashes_and_compare()
     }
 }
 

@@ -229,11 +229,14 @@ mod integration_test {
 
     mod custom_scoped_threads {
         use super::*;
+        use crossbeam_channel::{unbounded, Receiver};
         use csv_diff::{
+            csv_hash_receiver_comparer::CsvHashReceiverComparer,
             csv_hash_task_spawner::{
                 CsvHashTaskSenders, CsvHashTaskSpawner, CsvHashTaskSpawnerBuilder,
             },
             csv_parse_result::{CsvParseResultLeft, CsvParseResultRight},
+            diff_result::DiffByteRecordsIter,
         };
         use pretty_assertions::assert_eq;
         use std::{
@@ -259,24 +262,33 @@ mod integration_test {
                 &self,
                 csv_hash_task_senders_left: CsvHashTaskSenders<R>,
                 csv_hash_task_senders_right: CsvHashTaskSenders<R>,
+                csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
                 primary_key_columns: &HashSet<usize>,
-            ) where
+            ) -> Receiver<csv::Result<DiffByteRecordsIter<R>>>
+            where
                 R: Read + Seek + Send,
             {
+                let (sender, receiver) = unbounded();
                 self.pool.scoped(move |s| {
-                    s.execute(move || {
-                        self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
-                            csv_hash_task_senders_left,
-                            primary_key_columns,
-                        );
-                    });
-                    s.execute(move || {
-                        self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
-                            csv_hash_task_senders_right,
-                            primary_key_columns,
-                        );
+                    s.recurse(move |s| {
+                        s.execute(move || {
+                            self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
+                                csv_hash_task_senders_left,
+                                primary_key_columns,
+                            );
+                        });
+                        s.execute(move || {
+                            self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
+                                csv_hash_task_senders_right,
+                                primary_key_columns,
+                            );
+                        });
+                        sender
+                            .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
+                            .unwrap();
                     });
                 });
+                receiver
             }
         }
 
