@@ -1,9 +1,9 @@
-use ahash::AHasher;
 use crossbeam_channel::Sender;
 use csv::Reader;
 use std::collections::HashSet;
 use std::hash::Hasher;
 use std::io::{Read, Seek};
+use xxhash_rust::xxh3::{xxh3_128, Xxh3};
 
 use crate::csv::Csv;
 use crate::csv_parse_result::{
@@ -80,7 +80,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
 
             let mut records_buff: StackVec<CsvLeftRightParseResult> = smallvec::SmallVec::new();
 
-            let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+            let mut hasher = Xxh3::new();
             let record = csv_record_right_first;
             let key_fields: Vec<_> = fields_as_key
                 .iter()
@@ -93,12 +93,12 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                 }
                 let key = hasher.digest128();
                 // TODO: don't hash all of it -> exclude the key fields (see below)
-                hasher.write(record.as_slice());
+                let hash_record = xxh3_128(record.as_slice());
                 let pos = record.position().expect("a record position");
                 records_buff.push(
                     T::new(RecordHash::new(
                         key,
-                        hasher.digest128(),
+                        hash_record,
                         Position::new(pos.byte(), pos.line()),
                     ))
                     .into_payload(),
@@ -117,13 +117,13 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                     // TODO: don't hash all of it -> exclude the key fields
                     // in order to still be efficient and do as few `write` calls as possible
                     // consider using `csv_record.range(...)` method
-                    hasher.write(csv_record.as_slice());
+                    let hash_record = xxh3_128(csv_record.as_slice());
                     {
                         let pos = csv_record.position().expect("a record position");
                         records_buff.push(
                             T::new(RecordHash::new(
                                 key,
-                                hasher.digest128(),
+                                hash_record,
                                 Position::new(pos.byte(), pos.line()),
                             ))
                             .into_payload(),
