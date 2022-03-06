@@ -205,6 +205,9 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIter<R> {
     type Item = DiffByteRecord;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if !self.buf.is_empty() {
+            return self.buf.pop();
+        }
         while let Ok(csv_left_right_parse_result) = self.csv_left_right_parse_results.recv() {
             match csv_left_right_parse_result {
                 CsvLeftRightParseResult::Left(left_record_res) => {
@@ -273,7 +276,7 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIter<R> {
                                                 acc
                                             },
                                         );
-                                    return Some(DiffByteRecord::Modify {
+                                    self.buf.push(DiffByteRecord::Modify {
                                         add: ByteRecordLineInfo::new(
                                             right_byte_record,
                                             pos_right.line,
@@ -360,7 +363,7 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIter<R> {
                                                 acc
                                             },
                                         );
-                                    return Some(DiffByteRecord::Modify {
+                                    self.buf.push(DiffByteRecord::Modify {
                                         add: ByteRecordLineInfo::new(
                                             right_byte_record,
                                             pos_right.line,
@@ -382,6 +385,10 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIter<R> {
                     }
                 }
             }
+        }
+
+        if !self.buf.is_empty() {
+            return self.buf.pop();
         }
 
         let iter_left_map = self
