@@ -12,7 +12,7 @@ use crate::thread_scope_strategy::CrossbeamScope;
 use crate::thread_scope_strategy::RayonScope;
 use crate::{
     csv::Csv, csv_parse_result::RecordHash, csv_parser_hasher::CsvParserHasherSender,
-    diff_result::DiffByteRecordsIter, thread_scope_strategy::ThreadScoper,
+    diff_result::DiffByteRecordsIterator, thread_scope_strategy::ThreadScoper,
 };
 use crate::{
     csv_hash_receiver_comparer::{self, CsvHashReceiverComparer},
@@ -51,7 +51,7 @@ pub trait CsvHashTaskSpawner {
         csv_hash_task_senders_right: CsvHashTaskSenders<R>,
         csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
-    ) -> Receiver<csv::Result<DiffByteRecordsIter<R>>>;
+    ) -> Receiver<csv::Result<DiffByteRecordsIterator<R>>>;
 
     fn parse_hash_and_send_for_compare<R, P>(
         &self,
@@ -97,7 +97,7 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'_> {
         csv_hash_task_senders_right: CsvHashTaskSenders<R>,
         csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
-    ) -> Receiver<Result<DiffByteRecordsIter<R>, Error>>
+    ) -> Receiver<Result<DiffByteRecordsIterator<R>, Error>>
     where
         R: Read + Seek + Send,
     {

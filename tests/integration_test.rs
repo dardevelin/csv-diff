@@ -236,13 +236,13 @@ mod integration_test {
                 CsvHashTaskSenders, CsvHashTaskSpawner, CsvHashTaskSpawnerBuilder,
             },
             csv_parse_result::{CsvParseResultLeft, CsvParseResultRight},
-            diff_result::DiffByteRecordsIter,
+            diff_result::DiffByteRecordsIterator,
         };
         use pretty_assertions::assert_eq;
         use std::{
             collections::HashSet,
             error::Error,
-            io::{Cursor, Read, Seek},
+            io::{Read, Seek},
         };
 
         struct CsvHashTaskSpawnerCustom {
@@ -264,7 +264,7 @@ mod integration_test {
                 csv_hash_task_senders_right: CsvHashTaskSenders<R>,
                 csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
                 primary_key_columns: &HashSet<usize>,
-            ) -> Receiver<csv::Result<DiffByteRecordsIter<R>>>
+            ) -> Receiver<csv::Result<DiffByteRecordsIterator<R>>>
             where
                 R: Read + Seek + Send,
             {

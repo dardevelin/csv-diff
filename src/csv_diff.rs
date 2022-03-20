@@ -11,7 +11,7 @@ use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerBuilderRayon, CsvHashTaskSp
 use crate::csv_parse_result::CsvLeftRightParseResult;
 use crate::csv_parser_hasher::*;
 use crate::diff_result::DiffByteRecords;
-use crate::diff_result::DiffByteRecordsIter;
+use crate::diff_result::DiffByteRecordsIterator;
 use crate::thread_scope_strategy::*;
 use crate::{csv_hash_comparer::CsvHashComparer, csv_hash_task_spawner::CsvHashTaskSpawner};
 use crossbeam_channel::Receiver;
@@ -377,7 +377,7 @@ where
         receiver_csv_reader_left: Receiver<csv::Result<Reader<R>>>,
         receiver_csv_reader_right: Receiver<csv::Result<Reader<R>>>,
         receiver: Receiver<CsvLeftRightParseResult>,
-    ) -> csv::Result<DiffByteRecordsIter<R>>
+    ) -> csv::Result<DiffByteRecordsIterator<R>>
     where
         R: Read + Seek + Send,
     {

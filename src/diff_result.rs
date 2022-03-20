@@ -161,7 +161,7 @@ impl Iterator for DiffByteRecordsIntoIterator {
 
 pub(crate) type CsvHashValueMap = HashMap<u128, HashMapValue>;
 
-pub struct DiffByteRecordsIter<R> {
+pub struct DiffByteRecordsIterator<R> {
     buf: Vec<DiffByteRecord>,
     csv_left_right_parse_results: Receiver<CsvLeftRightParseResult>,
     csv_records_left_map: CsvHashValueMap,
@@ -176,7 +176,7 @@ pub struct DiffByteRecordsIter<R> {
     csv_seek_right_reader: csv::Reader<R>,
 }
 
-impl<R: Read + Seek> DiffByteRecordsIter<R> {
+impl<R: Read + Seek> DiffByteRecordsIterator<R> {
     pub(crate) fn new(
         csv_left_right_parse_results: Receiver<CsvLeftRightParseResult>,
         left_capacity: usize,
@@ -201,7 +201,7 @@ impl<R: Read + Seek> DiffByteRecordsIter<R> {
     }
 }
 
-impl<R: Read + Seek> Iterator for DiffByteRecordsIter<R> {
+impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
     type Item = DiffByteRecord;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -43,8 +43,8 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
     pub fn compare_csv_left_right_parse_result(
         self,
         csv_left_right_parse_results: Receiver<CsvLeftRightParseResult>,
-    ) -> DiffByteRecordsIter<R> {
-        let iter = DiffByteRecordsIter::new(
+    ) -> DiffByteRecordsIterator<R> {
+        let iter = DiffByteRecordsIterator::new(
             csv_left_right_parse_results,
             self.max_capacity_left_map,
             self.max_capacity_right_map,

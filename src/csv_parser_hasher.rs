@@ -85,28 +85,32 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                 // TODO: don't hash all of it -> exclude the key fields (see below)
                 let hash_record = record.hash_record();
                 let pos = record.position().expect("a record position");
-                self.sender.send(
-                    T::new(RecordHash::new(
-                        key,
-                        hash_record,
-                        Position::new(pos.byte(), pos.line()),
-                    ))
-                    .into_payload(),
-                );
+                self.sender
+                    .send(
+                        T::new(RecordHash::new(
+                            key,
+                            hash_record,
+                            Position::new(pos.byte(), pos.line()),
+                        ))
+                        .into_payload(),
+                    )
+                    .unwrap();
                 let mut line = 2;
                 while csv_reader.read_byte_record(&mut csv_record)? {
                     let key = csv_record.hash_key_fields(fields_as_key.as_slice());
                     let hash_record = csv_record.hash_record();
                     {
                         let pos = csv_record.position().expect("a record position");
-                        self.sender.send(
-                            T::new(RecordHash::new(
-                                key,
-                                hash_record,
-                                Position::new(pos.byte(), pos.line()),
-                            ))
-                            .into_payload(),
-                        );
+                        self.sender
+                            .send(
+                                T::new(RecordHash::new(
+                                    key,
+                                    hash_record,
+                                    Position::new(pos.byte(), pos.line()),
+                                ))
+                                .into_payload(),
+                            )
+                            .unwrap();
                     }
                     line += 1;
                 }
