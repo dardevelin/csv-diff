@@ -24,7 +24,6 @@ The most important types you will use are:
 
 pub mod csv;
 pub mod csv_diff;
-mod csv_hash_comparer;
 // TODO: try to make it more private
 pub mod csv_hash_receiver_comparer;
 pub mod csv_hash_task_spawner;

@@ -1,6 +1,7 @@
 use crate::csv::Csv;
 use crate::csv_hash_receiver_comparer::CsvHashReceiverComparer;
 use crate::csv_hash_task_spawner::CsvHashTaskSenders;
+use crate::csv_hash_task_spawner::CsvHashTaskSpawner;
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilder;
 #[cfg(feature = "crossbeam-threads")]
 use crate::csv_hash_task_spawner::{
@@ -9,11 +10,9 @@ use crate::csv_hash_task_spawner::{
 #[cfg(feature = "rayon-threads")]
 use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerBuilderRayon, CsvHashTaskSpawnerRayon};
 use crate::csv_parse_result::CsvLeftRightParseResult;
-use crate::csv_parser_hasher::*;
 use crate::diff_result::DiffByteRecords;
 use crate::diff_result::DiffByteRecordsIterator;
 use crate::thread_scope_strategy::*;
-use crate::{csv_hash_comparer::CsvHashComparer, csv_hash_task_spawner::CsvHashTaskSpawner};
 use crossbeam_channel::Receiver;
 use csv::Reader;
 use std::io::{Read, Seek};
