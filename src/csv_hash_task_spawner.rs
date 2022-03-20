@@ -144,24 +144,33 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerCrossbeam {
         &self,
         csv_hash_task_senders_left: CsvHashTaskSenders<R>,
         csv_hash_task_senders_right: CsvHashTaskSenders<R>,
+        csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
-    ) where
+    ) -> Receiver<Result<DiffByteRecordsIterator<R>, Error>>
+    where
         R: Read + Seek + Send,
     {
+        let (sender, receiver) = unbounded();
         self.thread_scoper.scope(move |s| {
-            s.spawn(move |_s1| {
-                self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
-                    csv_hash_task_senders_left,
-                    primary_key_columns,
-                );
-            });
-            s.spawn(move |_s2| {
-                self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
-                    csv_hash_task_senders_right,
-                    primary_key_columns,
-                );
+            s.spawn(move |ss| {
+                ss.spawn(move |_s1| {
+                    self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
+                        csv_hash_task_senders_left,
+                        primary_key_columns,
+                    );
+                });
+                ss.spawn(move |_s2| {
+                    self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
+                        csv_hash_task_senders_right,
+                        primary_key_columns,
+                    );
+                });
+                sender
+                    .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
+                    .unwrap();
             });
         });
+        receiver
     }
 }
 
