@@ -8,7 +8,7 @@ mod integration_test {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn create_default_instance_and_diff_with_cursor() -> Result<(), Box<dyn Error>> {
-        let csv_diff = csv_diff::csv_diff::CsvByteDiff::new()?;
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffLocal::new()?;
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -37,7 +37,7 @@ mod integration_test {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn create_default_instance_and_diff_without_cursor() -> Result<(), Box<dyn Error>> {
-        let csv_diff = csv_diff::csv_diff::CsvByteDiff::new()?;
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffLocal::new()?;
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -67,7 +67,7 @@ mod integration_test {
     #[test]
     fn create_instance_with_builder_and_diff_with_cursor() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new()
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffLocalBuilder::new()
             .rayon_thread_pool(&thread_pool)
             .build()?;
         let csv_left = "\
@@ -99,7 +99,7 @@ mod integration_test {
     #[test]
     fn create_instance_with_builder_and_diff_without_cursor() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new()
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffLocalBuilder::new()
             .rayon_thread_pool(&thread_pool)
             .build()?;
         let csv_left = "\
@@ -131,7 +131,7 @@ mod integration_test {
     #[test]
     fn create_instance_with_builder_set_all_and_diff() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new()
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffLocalBuilder::new()
             .rayon_thread_pool(&thread_pool)
             .primary_key_columns(std::iter::once(0))
             .build()?;
@@ -163,11 +163,12 @@ mod integration_test {
     #[cfg(feature = "crossbeam-threads")]
     #[test]
     fn create_instance_with_builder_crossbeam_and_diff_with_cursor() -> Result<(), Box<dyn Error>> {
-        use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderCrossbeam;
+        use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerLocalBuilderCrossbeam;
 
-        let csv_byte_diff =
-            csv_diff::csv_diff::CsvByteDiffBuilder::new(CsvHashTaskSpawnerBuilderCrossbeam::new())
-                .build()?;
+        let csv_byte_diff = csv_diff::csv_diff::CsvByteDiffLocalBuilder::new(
+            CsvHashTaskSpawnerLocalBuilderCrossbeam::new(),
+        )
+        .build()?;
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -197,11 +198,12 @@ mod integration_test {
     #[test]
     fn create_instance_with_builder_crossbeam_and_diff_without_cursor() -> Result<(), Box<dyn Error>>
     {
-        use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerBuilderCrossbeam;
+        use csv_diff::csv_hash_task_spawner::CsvHashTaskSpawnerLocalBuilderCrossbeam;
 
-        let csv_byte_diff =
-            csv_diff::csv_diff::CsvByteDiffBuilder::new(CsvHashTaskSpawnerBuilderCrossbeam::new())
-                .build()?;
+        let csv_byte_diff = csv_diff::csv_diff::CsvByteDiffLocalBuilder::new(
+            CsvHashTaskSpawnerLocalBuilderCrossbeam::new(),
+        )
+        .build()?;
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -233,7 +235,8 @@ mod integration_test {
         use csv_diff::{
             csv_hash_receiver_comparer::CsvHashReceiverComparer,
             csv_hash_task_spawner::{
-                CsvHashTaskSenders, CsvHashTaskSpawner, CsvHashTaskSpawnerBuilder,
+                CsvHashTaskLineSenders, CsvHashTaskSenders, CsvHashTaskSpawnerLocal,
+                CsvHashTaskSpawnerLocalBuilder,
             },
             csv_parse_result::{CsvParseResultLeft, CsvParseResultRight},
             diff_result::DiffByteRecordsIterator,
@@ -257,28 +260,28 @@ mod integration_test {
             }
         }
 
-        impl CsvHashTaskSpawner for CsvHashTaskSpawnerCustom {
+        impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerCustom {
             fn spawn_hashing_tasks_and_send_result<R>(
                 &self,
-                csv_hash_task_senders_left: CsvHashTaskSenders<R>,
-                csv_hash_task_senders_right: CsvHashTaskSenders<R>,
+                csv_hash_task_senders_left: CsvHashTaskLineSenders<R>,
+                csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
                 csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
                 primary_key_columns: &HashSet<usize>,
             ) -> Receiver<csv::Result<DiffByteRecordsIterator<R>>>
             where
-                R: Read + Seek + Send,
+                R: Read + Clone + Seek + Send,
             {
                 let (sender, receiver) = unbounded();
                 self.pool.scoped(move |s| {
                     s.recurse(move |s| {
                         s.execute(move || {
-                            self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
+                            Self::parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
                                 csv_hash_task_senders_left,
                                 primary_key_columns,
                             );
                         });
                         s.execute(move || {
-                            self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
+                            Self::parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
                                 csv_hash_task_senders_right,
                                 primary_key_columns,
                             );
@@ -302,7 +305,7 @@ mod integration_test {
             }
         }
 
-        impl CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerCustom> for CsvHashTaskSpawnerBuilderCustom {
+        impl CsvHashTaskSpawnerLocalBuilder<CsvHashTaskSpawnerCustom> for CsvHashTaskSpawnerBuilderCustom {
             fn build(self) -> CsvHashTaskSpawnerCustom {
                 CsvHashTaskSpawnerCustom::new(self.pool_size)
             }
@@ -311,7 +314,7 @@ mod integration_test {
         #[test]
         fn create_instance_with_builder_custom_scoped_threads_and_diff(
         ) -> Result<(), Box<dyn Error>> {
-            let csv_byte_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new(
+            let csv_byte_diff = csv_diff::csv_diff::CsvByteDiffLocalBuilder::new(
                 CsvHashTaskSpawnerBuilderCustom::new(4),
             )
             .primary_key_columns(std::iter::once(0))

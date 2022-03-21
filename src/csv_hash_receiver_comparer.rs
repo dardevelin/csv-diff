@@ -1,7 +1,10 @@
 use crate::{csv_parse_result::CsvLeftRightParseResult, diff_result::DiffByteRecordsIterator};
 use crossbeam_channel::Receiver;
 use csv::Reader;
-use std::io::{Read, Seek};
+use std::{
+    io::{Read, Seek},
+    sync::Arc,
+};
 
 pub struct CsvHashReceiverComparer<R: Read + Seek + Send> {
     // TODO: make it more private
@@ -42,5 +45,24 @@ impl<R: Read + Seek + Send> CsvHashReceiverComparer<R> {
             csv_reader_left_for_diff_seek,
             csv_reader_right_for_diff_seek,
         ))
+    }
+}
+
+pub struct CsvHashReceiverStreamComparer<R: Read + Seek + Send> {
+    // TODO: make it more private
+    pub csv_reader_left: Reader<R>,
+    pub csv_reader_right: Reader<R>,
+    pub receiver: Receiver<CsvLeftRightParseResult>,
+}
+
+impl<R: Read + Seek + Send> CsvHashReceiverStreamComparer<R> {
+    pub fn recv_hashes_and_compare(self) -> DiffByteRecordsIterator<R> {
+        DiffByteRecordsIterator::new(
+            self.receiver,
+            2,
+            2,
+            self.csv_reader_left,
+            self.csv_reader_right,
+        )
     }
 }

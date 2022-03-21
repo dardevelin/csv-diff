@@ -5,7 +5,7 @@ use std::io::Cursor;
 use utils::csv_generator::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let csv_diff = CsvByteDiff::new()?;
+    let csv_diff = CsvByteDiffLocal::new()?;
 
     let (csv_gen_left, csv_gen_right) = (
         CsvGenerator::new(1_000_000, 9),

@@ -10,13 +10,13 @@ use std::{
 };
 
 /// Holds all information about the difference between two CSVs, after they have
-/// been compared with [`CsvByteDiff.diff`](crate::csv_diff::CsvByteDiff::diff).
+/// been compared with [`CsvByteDiffLocal.diff`](crate::csv_diff::CsvByteDiffLocal::diff).
 /// CSV records that are equal are __not__ stored in this structure.
 ///
 /// Also, keep in mind, that differences are stored _unordered_ (with regard to the line in the CSV).
 /// You can use [`DiffByteRecords.sort_by_line`](DiffByteRecords::sort_by_line) to sort them in-place.
 ///
-/// See the example on [`CsvByteDiff`](crate::csv_diff::CsvByteDiff) for general usage.
+/// See the example on [`CsvByteDiffLocal`](crate::csv_diff::CsvByteDiffLocal) for general usage.
 #[derive(Debug, PartialEq, Clone)]
 pub struct DiffByteRecords(pub(crate) Vec<DiffByteRecord>);
 
@@ -95,7 +95,7 @@ impl DiffByteRecords {
     #[cfg_attr(
         feature = "rayon-threads",
         doc = r##"
-    use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
+    use csv_diff::{csv_diff::CsvByteDiffLocal, csv::Csv};
     use std::collections::HashSet;
     use std::iter::FromIterator;
     # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -108,7 +108,7 @@ impl DiffByteRecords {
                           2,strawberry,nut\n\
                           3,cherry,fruit";
 
-    let csv_byte_diff = CsvByteDiff::new()?;
+    let csv_byte_diff = CsvByteDiffLocal::new()?;
 
     let mut diff_byte_records = csv_byte_diff.diff(
         Csv::new(csv_data_left.as_bytes()),
@@ -295,6 +295,9 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
                             &mut self.intermediate_right_map,
                             &mut self.csv_records_right_map,
                         );
+                        if !self.buf.is_empty() {
+                            break;
+                        }
                     }
                 }
                 CsvLeftRightParseResult::Right(right_record_res) => {
@@ -382,6 +385,9 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
                             &mut self.intermediate_left_map,
                             &mut self.csv_records_left_map,
                         );
+                        if !self.buf.is_empty() {
+                            break;
+                        }
                     }
                 }
             }
