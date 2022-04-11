@@ -16,8 +16,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_diff.diff(
-            Csv::new(Cursor::new(csv_left.as_bytes())),
-            Csv::new(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
         )?;
 
         diff_res.sort_by_line();
@@ -45,8 +45,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_diff.diff(
-            Csv::new(csv_left.as_bytes()),
-            Csv::new(csv_right.as_bytes()),
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         )?;
 
         diff_res.sort_by_line();
@@ -77,8 +77,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_diff.diff(
-            Csv::new(Cursor::new(csv_left.as_bytes())),
-            Csv::new(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
         )?;
 
         diff_res.sort_by_line();
@@ -109,8 +109,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_diff.diff(
-            Csv::new(csv_left.as_bytes()),
-            Csv::new(csv_right.as_bytes()),
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         )?;
 
         diff_res.sort_by_line();
@@ -142,8 +142,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_diff.diff(
-            Csv::new(Cursor::new(csv_left.as_bytes())),
-            Csv::new(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
         )?;
 
         diff_res.sort_by_line();
@@ -176,8 +176,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_byte_diff.diff(
-            Csv::new(Cursor::new(csv_left.as_bytes())),
-            Csv::new(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
         )?;
 
         diff_res.sort_by_line();
@@ -211,8 +211,8 @@ mod integration_test {
                         header1,header2,header3\n\
                         a,b,d";
         let mut diff_res = csv_byte_diff.diff(
-            Csv::new(csv_left.as_bytes()),
-            Csv::new(csv_right.as_bytes()),
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         )?;
 
         diff_res.sort_by_line();
@@ -326,8 +326,8 @@ mod integration_test {
                             header1,header2,header3\n\
                             a,b,d";
             let mut diff_res = csv_byte_diff.diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
+                Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
+                Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
             )?;
 
             diff_res.sort_by_line();

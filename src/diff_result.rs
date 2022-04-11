@@ -111,8 +111,8 @@ impl DiffByteRecords {
     let csv_byte_diff = CsvByteDiffLocal::new()?;
 
     let mut diff_byte_records = csv_byte_diff.diff(
-        Csv::new(csv_data_left.as_bytes()),
-        Csv::new(csv_data_right.as_bytes()),
+        Csv::with_reader_seek(csv_data_left.as_bytes()),
+        Csv::with_reader_seek(csv_data_right.as_bytes()),
     )?;
     
     let diff_byte_record_slice = diff_byte_records.as_slice();

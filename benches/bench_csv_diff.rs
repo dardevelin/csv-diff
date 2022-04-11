@@ -45,8 +45,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                 b.iter(|| {
                     csv_byte_diff
                         .diff(
-                            Csv::new(Cursor::new(csv_left.as_slice())),
-                            Csv::new(Cursor::new(csv_left.as_slice())),
+                            Csv::with_reader_seek(Cursor::new(csv_left.as_slice())),
+                            Csv::with_reader_seek(Cursor::new(csv_left.as_slice())),
                         )
                         .unwrap();
                 });
