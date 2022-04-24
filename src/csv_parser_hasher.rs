@@ -1,4 +1,4 @@
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Receiver, Sender};
 use csv::Reader;
 use std::collections::HashSet;
 use std::hash::Hasher;
@@ -9,32 +9,32 @@ use xxhash_rust::xxh3::{xxh3_128, Xxh3};
 use crate::csv::Csv;
 use crate::csv_hasher::CsvHasherExt;
 use crate::csv_parse_result::{
-    CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight, Position,
-    RecordHash,
+    CsvByteRecordWithHash, CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft,
+    CsvParseResultRight, Position, RecordHash, RecordHashWithPosition,
 };
 
-impl CsvParseResult<CsvLeftRightParseResult, RecordHash> for CsvParseResultLeft {
+impl<R> CsvParseResult<CsvLeftRightParseResult<R>, R> for CsvParseResultLeft<R> {
     #[inline]
-    fn new(record_hash: RecordHash) -> Self {
+    fn new(record_hash: R) -> Self {
         Self {
             csv_left_right_parse_result: CsvLeftRightParseResult::Left(record_hash),
         }
     }
     #[inline]
-    fn into_payload(self) -> CsvLeftRightParseResult {
+    fn into_payload(self) -> CsvLeftRightParseResult<R> {
         self.csv_left_right_parse_result
     }
 }
 
-impl CsvParseResult<CsvLeftRightParseResult, RecordHash> for CsvParseResultRight {
+impl<R> CsvParseResult<CsvLeftRightParseResult<R>, R> for CsvParseResultRight<R> {
     #[inline]
-    fn new(record_hash: RecordHash) -> Self {
+    fn new(record_hash: R) -> Self {
         Self {
             csv_left_right_parse_result: CsvLeftRightParseResult::Right(record_hash),
         }
     }
     #[inline]
-    fn into_payload(self) -> CsvLeftRightParseResult {
+    fn into_payload(self) -> CsvLeftRightParseResult<R> {
         self.csv_left_right_parse_result
     }
 }
@@ -44,8 +44,11 @@ pub(crate) struct CsvParserHasherLinesSender<T> {
     sender_total_lines: Sender<u64>,
 }
 
-impl CsvParserHasherLinesSender<CsvLeftRightParseResult> {
-    pub fn new(sender: Sender<CsvLeftRightParseResult>, sender_total_lines: Sender<u64>) -> Self {
+impl CsvParserHasherLinesSender<CsvLeftRightParseResult<RecordHashWithPosition>> {
+    pub fn new(
+        sender: Sender<CsvLeftRightParseResult<RecordHashWithPosition>>,
+        sender_total_lines: Sender<u64>,
+    ) -> Self {
         Self {
             sender,
             sender_total_lines,
@@ -53,7 +56,7 @@ impl CsvParserHasherLinesSender<CsvLeftRightParseResult> {
     }
     pub fn parse_and_hash<
         R: Read + Seek + Send,
-        T: CsvParseResult<CsvLeftRightParseResult, RecordHash>,
+        T: CsvParseResult<CsvLeftRightParseResult<RecordHashWithPosition>, RecordHashWithPosition>,
     >(
         &mut self,
         csv: Csv<R>,
@@ -88,7 +91,7 @@ impl CsvParserHasherLinesSender<CsvLeftRightParseResult> {
                 let pos = record.position().expect("a record position");
                 self.sender
                     .send(
-                        T::new(RecordHash::new(
+                        T::new(RecordHashWithPosition::new(
                             key,
                             hash_record,
                             Position::new(pos.byte(), pos.line()),
@@ -104,7 +107,7 @@ impl CsvParserHasherLinesSender<CsvLeftRightParseResult> {
                         let pos = csv_record.position().expect("a record position");
                         self.sender
                             .send(
-                                T::new(RecordHash::new(
+                                T::new(RecordHashWithPosition::new(
                                     key,
                                     hash_record,
                                     Position::new(pos.byte(), pos.line()),
@@ -128,17 +131,18 @@ pub(crate) struct CsvParserHasherSender<T> {
     sender: Sender<T>,
 }
 
-impl CsvParserHasherSender<CsvLeftRightParseResult> {
-    pub fn new(sender: Sender<CsvLeftRightParseResult>) -> Self {
+impl CsvParserHasherSender<CsvLeftRightParseResult<CsvByteRecordWithHash>> {
+    pub fn new(sender: Sender<CsvLeftRightParseResult<CsvByteRecordWithHash>>) -> Self {
         Self { sender }
     }
     pub fn parse_and_hash<
-        R: Read + Seek + Send,
-        T: CsvParseResult<CsvLeftRightParseResult, RecordHash>,
+        R: Read + Send,
+        T: CsvParseResult<CsvLeftRightParseResult<CsvByteRecordWithHash>, CsvByteRecordWithHash>,
     >(
         &mut self,
         csv: Csv<R>,
         primary_key_columns: &HashSet<usize>,
+        receiver_csv_recycle: Receiver<csv::ByteRecord>,
     ) -> csv::Result<()> {
         let mut csv_reader: Reader<R> = csv.into();
         let mut csv_record = csv::ByteRecord::new();
@@ -169,61 +173,60 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                 let key = hasher.digest128();
                 // TODO: don't hash all of it -> exclude the key fields (see below)
                 let hash_record = xxh3_128(record.as_slice());
-                let pos = record.position().expect("a record position");
                 self.sender
                     .send(
-                        T::new(RecordHash::new(
-                            key,
-                            hash_record,
-                            Position::new(pos.byte(), pos.line()),
+                        T::new(CsvByteRecordWithHash::new(
+                            record,
+                            RecordHash::new(key, hash_record),
                         ))
                         .into_payload(),
                     )
                     .unwrap();
-                let mut line = 2;
-                while csv_reader.read_byte_record(&mut csv_record)? {
-                    hasher.reset();
-                    let key_fields = fields_as_key
-                        .iter()
-                        .filter_map(|k_idx| csv_record.get(**k_idx));
-                    // TODO: try to do it with as few calls to `write` as possible (see below)
-                    for key_field in key_fields {
-                        hasher.write(key_field);
+
+                loop {
+                    let mut csv_record = receiver_csv_recycle
+                        .try_recv()
+                        .unwrap_or_else(|_| csv::ByteRecord::new());
+
+                    if csv_reader.read_byte_record(&mut csv_record)? {
+                        hasher.reset();
+                        let key_fields = fields_as_key
+                            .iter()
+                            .filter_map(|k_idx| csv_record.get(**k_idx));
+                        // TODO: try to do it with as few calls to `write` as possible (see below)
+                        for key_field in key_fields {
+                            hasher.write(key_field);
+                        }
+                        let key = hasher.digest128();
+                        // TODO: don't hash all of it -> exclude the key fields
+                        // in order to still be efficient and do as few `write` calls as possible
+                        // consider using `csv_record.range(...)` method
+                        let hash_record = xxh3_128(csv_record.as_slice());
+                        {
+                            let pos = csv_record.position().expect("a record position");
+                            self.sender
+                                .send(
+                                    T::new(CsvByteRecordWithHash::new(
+                                        csv_record,
+                                        RecordHash::new(key, hash_record),
+                                    ))
+                                    .into_payload(),
+                                )
+                                .unwrap();
+                        }
+                    } else {
+                        break;
                     }
-                    let key = hasher.digest128();
-                    // TODO: don't hash all of it -> exclude the key fields
-                    // in order to still be efficient and do as few `write` calls as possible
-                    // consider using `csv_record.range(...)` method
-                    let hash_record = xxh3_128(csv_record.as_slice());
-                    {
-                        let pos = csv_record.position().expect("a record position");
-                        self.sender
-                            .send(
-                                T::new(RecordHash::new(
-                                    key,
-                                    hash_record,
-                                    Position::new(pos.byte(), pos.line()),
-                                ))
-                                .into_payload(),
-                            )
-                            .unwrap();
-                    }
-                    line += 1;
                 }
-                // TODO: uncomment this! only testing for streaming
-                //self.sender_total_lines.send(line).unwrap();
             }
-        } else {
-            // TODO: uncomment this! only testing for streaming
-            //self.sender_total_lines.send(0).unwrap();
         }
         Ok(())
     }
 }
 
 #[derive(Debug)]
-pub(crate) enum HashMapValue {
-    Initial(u128, Position),
-    Equal,
-    Modified(Position, Position),
+pub(crate) enum HashMapValue<T, TEq = T> {
+    Initial(u128, T),
+    Equal(TEq, TEq),
+    Modified(T, T),
 }

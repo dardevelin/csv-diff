@@ -1,11 +1,11 @@
 use criterion::black_box;
-use csv_diff::csv::Csv;
+use csv_diff::csv::{Csv, IoArcAsRef};
 use csv_diff::csv_diff::*;
 use std::io::Cursor;
 use utils::csv_generator::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let csv_diff = CsvByteDiffLocal::new()?;
+    let mut csv_byte_diff = CsvByteDiff::new()?;
 
     let (csv_gen_left, csv_gen_right) = (
         CsvGenerator::new(1_000_000, 9),
@@ -14,13 +14,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (csv_left, csv_right) = (csv_gen_left.generate(), csv_gen_right.generate());
 
+    let csv_left_1: String = String::from_utf8(csv_left.clone()).expect("is utf8");
+    let csv_left_2 = csv_left_1.clone();
+
     let res = black_box(
-        csv_diff
+        csv_byte_diff
             .diff(
-                Csv::new(Cursor::new(csv_left.as_slice())),
-                Csv::new(Cursor::new(csv_left.as_slice())),
+                Csv::with_reader_seek(Cursor::new(IoArcAsRef(io_arc::IoArc::new(csv_left_1)))),
+                Csv::with_reader_seek(Cursor::new(IoArcAsRef(io_arc::IoArc::new(csv_left_2)))),
             )
-            .unwrap(),
+            .for_each(drop),
     );
     Ok(())
 }

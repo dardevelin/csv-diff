@@ -10,6 +10,7 @@ edition = "2018"
 utils = { path = "../utils" }
 csv-diff = { path = "../..", features = ["rayon"]}
 criterion = "0.3"
+io-arc = "1.0.0"
 
 # add more info for perf stats
 [profile.release]

@@ -235,11 +235,11 @@ mod integration_test {
         use csv_diff::{
             csv_hash_receiver_comparer::CsvHashReceiverComparer,
             csv_hash_task_spawner::{
-                CsvHashTaskLineSenders, CsvHashTaskSenders, CsvHashTaskSpawnerLocal,
-                CsvHashTaskSpawnerLocalBuilder,
+                CsvHashTaskLineSenders, CsvHashTaskSendersWithRecycleReceiver,
+                CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder,
             },
-            csv_parse_result::{CsvParseResultLeft, CsvParseResultRight},
-            diff_result::DiffByteRecordsIterator,
+            csv_parse_result::{CsvParseResultLeft, CsvParseResultRight, RecordHashWithPosition},
+            diff_result::DiffByteRecordsSeekIterator,
         };
         use pretty_assertions::assert_eq;
         use std::{
@@ -267,7 +267,7 @@ mod integration_test {
                 csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
                 csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
                 primary_key_columns: &HashSet<usize>,
-            ) -> Receiver<csv::Result<DiffByteRecordsIterator<R>>>
+            ) -> Receiver<csv::Result<DiffByteRecordsSeekIterator<R>>>
             where
                 R: Read + Clone + Seek + Send,
             {
@@ -275,15 +275,19 @@ mod integration_test {
                 self.pool.scoped(move |s| {
                     s.recurse(move |s| {
                         s.execute(move || {
-                            Self::parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
-                                csv_hash_task_senders_left,
-                                primary_key_columns,
+                            Self::parse_hash_and_send_for_compare::<
+                                R,
+                                CsvParseResultLeft<RecordHashWithPosition>,
+                            >(
+                                csv_hash_task_senders_left, primary_key_columns
                             );
                         });
                         s.execute(move || {
-                            Self::parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
-                                csv_hash_task_senders_right,
-                                primary_key_columns,
+                            Self::parse_hash_and_send_for_compare::<
+                                R,
+                                CsvParseResultRight<RecordHashWithPosition>,
+                            >(
+                                csv_hash_task_senders_right, primary_key_columns
                             );
                         });
                         sender

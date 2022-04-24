@@ -1,5 +1,8 @@
-use crate::{csv_parse_result::CsvLeftRightParseResult, diff_result::DiffByteRecordsIterator};
-use crossbeam_channel::Receiver;
+use crate::{
+    csv_parse_result::{CsvByteRecordWithHash, CsvLeftRightParseResult, RecordHashWithPosition},
+    diff_result::{DiffByteRecordsIterator, DiffByteRecordsSeekIterator},
+};
+use crossbeam_channel::{Receiver, Sender};
 use csv::Reader;
 use std::{
     io::{Read, Seek},
@@ -12,11 +15,11 @@ pub struct CsvHashReceiverComparer<R: Read + Seek + Send> {
     pub receiver_total_lines_right: Receiver<u64>,
     pub receiver_csv_reader_left: Receiver<csv::Result<Reader<R>>>,
     pub receiver_csv_reader_right: Receiver<csv::Result<Reader<R>>>,
-    pub receiver: Receiver<CsvLeftRightParseResult>,
+    pub receiver: Receiver<CsvLeftRightParseResult<RecordHashWithPosition>>,
 }
 
 impl<R: Read + Seek + Send> CsvHashReceiverComparer<R> {
-    pub fn recv_hashes_and_compare(self) -> csv::Result<DiffByteRecordsIterator<R>> {
+    pub fn recv_hashes_and_compare(self) -> csv::Result<DiffByteRecordsSeekIterator<R>> {
         let (total_lines_right, total_lines_left) = (
             self.receiver_total_lines_right.recv().unwrap_or_default(),
             self.receiver_total_lines_left.recv().unwrap_or_default(),
@@ -38,7 +41,7 @@ impl<R: Read + Seek + Send> CsvHashReceiverComparer<R> {
                 total_lines_left / 100
             } as usize;
 
-        Ok(DiffByteRecordsIterator::new(
+        Ok(DiffByteRecordsSeekIterator::new(
             self.receiver,
             max_capacity_for_hash_map_left,
             max_capacity_for_hash_map_right,
@@ -48,21 +51,30 @@ impl<R: Read + Seek + Send> CsvHashReceiverComparer<R> {
     }
 }
 
-pub struct CsvHashReceiverStreamComparer<R: Read + Seek + Send> {
-    // TODO: make it more private
-    pub csv_reader_left: Reader<R>,
-    pub csv_reader_right: Reader<R>,
-    pub receiver: Receiver<CsvLeftRightParseResult>,
+pub struct CsvHashReceiverStreamComparer {
+    receiver: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
+    sender_csv_records_recycle: Sender<csv::ByteRecord>,
 }
 
-impl<R: Read + Seek + Send> CsvHashReceiverStreamComparer<R> {
-    pub fn recv_hashes_and_compare(self) -> DiffByteRecordsIterator<R> {
+impl CsvHashReceiverStreamComparer {
+    pub(crate) fn new(
+        receiver: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
+        sender_csv_records_recycle: Sender<csv::ByteRecord>,
+    ) -> Self {
+        Self {
+            receiver,
+            sender_csv_records_recycle,
+        }
+    }
+    pub fn recv_hashes_and_compare(self) -> DiffByteRecordsIterator {
         DiffByteRecordsIterator::new(
             self.receiver,
-            2,
-            2,
-            self.csv_reader_left,
-            self.csv_reader_right,
+            // TODO: for now we just put a hard code value in here (optimal for 1_000_000 lines),
+            // but this needs to be revised. The challenge is: how do we know the optimal capacity,
+            // when we don't know the total num of lines?
+            10_000,
+            10_000,
+            self.sender_csv_records_recycle,
         )
     }
 }

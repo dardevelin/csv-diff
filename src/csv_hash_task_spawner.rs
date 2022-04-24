@@ -14,9 +14,9 @@ use crate::thread_scope_strategy::RayonScope;
 use crate::{
     csv::Csv,
     csv_hash_receiver_comparer::CsvHashReceiverStreamComparer,
-    csv_parse_result::RecordHash,
+    csv_parse_result::{CsvByteRecordWithHash, RecordHashWithPosition},
     csv_parser_hasher::{CsvParserHasherLinesSender, CsvParserHasherSender},
-    diff_result::DiffByteRecordsIterator,
+    diff_result::{DiffByteRecordsIterator, DiffByteRecordsSeekIterator},
     thread_scope_strategy::ThreadScoper,
 };
 use crate::{
@@ -26,19 +26,28 @@ use crate::{
     },
 };
 
-pub struct CsvHashTaskSenders<R: Read + Clone> {
-    sender: Sender<CsvLeftRightParseResult>,
+pub struct CsvHashTaskSendersWithRecycleReceiver<R: Read + Clone> {
+    sender: Sender<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
     csv: Csv<R>,
+    receiver_recycle_csv: Receiver<csv::ByteRecord>,
 }
 
-impl<R: Read + Clone> CsvHashTaskSenders<R> {
-    pub(crate) fn new(sender: Sender<CsvLeftRightParseResult>, csv: Csv<R>) -> Self {
-        Self { sender, csv }
+impl<R: Read + Clone> CsvHashTaskSendersWithRecycleReceiver<R> {
+    pub(crate) fn new(
+        sender: Sender<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
+        csv: Csv<R>,
+        receiver_recycle_csv: Receiver<csv::ByteRecord>,
+    ) -> Self {
+        Self {
+            sender,
+            csv,
+            receiver_recycle_csv,
+        }
     }
 }
 
 pub struct CsvHashTaskLineSenders<R: Read + Clone> {
-    sender: Sender<CsvLeftRightParseResult>,
+    sender: Sender<CsvLeftRightParseResult<RecordHashWithPosition>>,
     sender_total_lines: Sender<u64>,
     sender_csv_reader: Sender<csv::Result<Reader<R>>>,
     csv: Csv<R>,
@@ -46,7 +55,7 @@ pub struct CsvHashTaskLineSenders<R: Read + Clone> {
 
 impl<R: Read + Clone> CsvHashTaskLineSenders<R> {
     pub(crate) fn new(
-        sender: Sender<CsvLeftRightParseResult>,
+        sender: Sender<CsvLeftRightParseResult<RecordHashWithPosition>>,
         sender_total_lines: Sender<u64>,
         sender_csv_reader: Sender<csv::Result<Reader<R>>>,
         csv: Csv<R>,
@@ -61,29 +70,34 @@ impl<R: Read + Clone> CsvHashTaskLineSenders<R> {
 }
 
 pub trait CsvHashTaskSpawner {
-    fn spawn_hashing_tasks_and_send_result<R: Clone + Read + Seek + Send + 'static>(
+    fn spawn_hashing_tasks_and_send_result<R: Clone + Read + Send + 'static>(
         self,
-        csv_hash_task_senders_left: CsvHashTaskSenders<R>,
-        csv_hash_task_senders_right: CsvHashTaskSenders<R>,
-        csv_hash_receiver_comparer: CsvHashReceiverStreamComparer<R>,
+        csv_hash_task_senders_left: CsvHashTaskSendersWithRecycleReceiver<R>,
+        csv_hash_task_senders_right: CsvHashTaskSendersWithRecycleReceiver<R>,
+        csv_hash_receiver_comparer: CsvHashReceiverStreamComparer,
         primary_key_columns: HashSet<usize>,
-    ) -> (Self, Receiver<DiffByteRecordsIterator<R>>)
+    ) -> (Self, Receiver<DiffByteRecordsIterator>)
     where
         // TODO: this bound is only necessary, because we are returning `self` here;
         // maybe we can do it differently
         Self: Sized;
 
     fn parse_hash_and_send_for_compare<R, P>(
-        csv_hash_task_senders: CsvHashTaskSenders<R>,
+        csv_hash_task_senders: CsvHashTaskSendersWithRecycleReceiver<R>,
         primary_key_columns: HashSet<usize>,
     ) -> csv::Result<()>
     where
-        R: Read + Clone + Seek + Send,
-        P: CsvParseResult<CsvLeftRightParseResult, RecordHash>,
+        R: Read + Clone + Send,
+        P: CsvParseResult<CsvLeftRightParseResult<CsvByteRecordWithHash>, CsvByteRecordWithHash>,
     {
-        let mut csv_parser_hasher: CsvParserHasherSender<CsvLeftRightParseResult> =
-            CsvParserHasherSender::new(csv_hash_task_senders.sender);
-        csv_parser_hasher.parse_and_hash::<R, P>(csv_hash_task_senders.csv, &primary_key_columns)
+        let mut csv_parser_hasher: CsvParserHasherSender<
+            CsvLeftRightParseResult<CsvByteRecordWithHash>,
+        > = CsvParserHasherSender::new(csv_hash_task_senders.sender);
+        csv_parser_hasher.parse_and_hash::<R, P>(
+            csv_hash_task_senders.csv,
+            &primary_key_columns,
+            csv_hash_task_senders.receiver_recycle_csv,
+        )
     }
 }
 
@@ -108,26 +122,26 @@ impl<'tp> CsvHashTaskSpawnerRayon<'tp> {
 }
 
 impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
-    fn spawn_hashing_tasks_and_send_result<R: Clone + Read + Seek + Send + 'static>(
+    fn spawn_hashing_tasks_and_send_result<R: Clone + Read + Send + 'static>(
         self,
-        csv_hash_task_senders_left: CsvHashTaskSenders<R>,
-        csv_hash_task_senders_right: CsvHashTaskSenders<R>,
-        csv_hash_receiver_comparer: CsvHashReceiverStreamComparer<R>,
+        csv_hash_task_senders_left: CsvHashTaskSendersWithRecycleReceiver<R>,
+        csv_hash_task_senders_right: CsvHashTaskSendersWithRecycleReceiver<R>,
+        csv_hash_receiver_comparer: CsvHashReceiverStreamComparer,
         primary_key_columns: HashSet<usize>,
-    ) -> (Self, Receiver<DiffByteRecordsIterator<R>>) {
+    ) -> (Self, Receiver<DiffByteRecordsIterator>) {
         let (sender, receiver) = unbounded();
 
         let prim_key_columns_clone = primary_key_columns.clone();
 
         self.thread_pool.spawn(move || {
-            Self::parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
+            Self::parse_hash_and_send_for_compare::<R, CsvParseResultLeft<CsvByteRecordWithHash>>(
                 csv_hash_task_senders_left,
                 primary_key_columns,
             );
         });
 
         self.thread_pool.spawn(move || {
-            Self::parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
+            Self::parse_hash_and_send_for_compare::<R, CsvParseResultRight<CsvByteRecordWithHash>>(
                 csv_hash_task_senders_right,
                 prim_key_columns_clone,
             );
@@ -150,20 +164,21 @@ pub trait CsvHashTaskSpawnerLocal {
         csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
         csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
-    ) -> Receiver<csv::Result<DiffByteRecordsIterator<R>>>;
+    ) -> Receiver<csv::Result<DiffByteRecordsSeekIterator<R>>>;
 
     fn parse_hash_and_send_for_compare<R, P>(
         csv_hash_task_senders: CsvHashTaskLineSenders<R>,
         primary_key_columns: &HashSet<usize>,
     ) where
         R: Read + Clone + Seek + Send,
-        P: CsvParseResult<CsvLeftRightParseResult, RecordHash>,
+        P: CsvParseResult<CsvLeftRightParseResult<RecordHashWithPosition>, RecordHashWithPosition>,
     {
-        let mut csv_parser_hasher: CsvParserHasherLinesSender<CsvLeftRightParseResult> =
-            CsvParserHasherLinesSender::new(
-                csv_hash_task_senders.sender,
-                csv_hash_task_senders.sender_total_lines,
-            );
+        let mut csv_parser_hasher: CsvParserHasherLinesSender<
+            CsvLeftRightParseResult<RecordHashWithPosition>,
+        > = CsvParserHasherLinesSender::new(
+            csv_hash_task_senders.sender,
+            csv_hash_task_senders.sender_total_lines,
+        );
         csv_hash_task_senders
             .sender_csv_reader
             .send(
@@ -195,7 +210,7 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalRayon<'_> {
         csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
         csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
-    ) -> Receiver<Result<DiffByteRecordsIterator<R>, Error>>
+    ) -> Receiver<Result<DiffByteRecordsSeekIterator<R>, Error>>
     where
         R: Read + Clone + Seek + Send,
     {
@@ -203,16 +218,16 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalRayon<'_> {
         self.thread_scoper.scope(move |s| {
             s.spawn(move |ss| {
                 ss.spawn(move |_s1| {
-                    Self::parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
-                        csv_hash_task_senders_left,
-                        primary_key_columns,
-                    );
+                    Self::parse_hash_and_send_for_compare::<
+                        R,
+                        CsvParseResultLeft<RecordHashWithPosition>,
+                    >(csv_hash_task_senders_left, primary_key_columns);
                 });
                 ss.spawn(move |_s2| {
-                    Self::parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
-                        csv_hash_task_senders_right,
-                        primary_key_columns,
-                    );
+                    Self::parse_hash_and_send_for_compare::<
+                        R,
+                        CsvParseResultRight<RecordHashWithPosition>,
+                    >(csv_hash_task_senders_right, primary_key_columns);
                 });
                 sender
                     .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
@@ -240,11 +255,11 @@ impl CsvHashTaskSpawnerLocalCrossbeam {
 impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalCrossbeam {
     fn spawn_hashing_tasks_and_send_result<R>(
         &self,
-        csv_hash_task_senders_left: CsvHashTaskSenders<R>,
-        csv_hash_task_senders_right: CsvHashTaskSenders<R>,
+        csv_hash_task_senders_left: CsvHashTaskSendersWithRecycleReceiver<R>,
+        csv_hash_task_senders_right: CsvHashTaskSendersWithRecycleReceiver<R>,
         csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
-    ) -> Receiver<Result<DiffByteRecordsIterator<R>, Error>>
+    ) -> Receiver<Result<DiffByteRecordsSeekIterator<R>, Error>>
     where
         R: Read + Seek + Send,
     {

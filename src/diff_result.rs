@@ -1,8 +1,13 @@
 use crate::{
-    csv_parse_result::CsvLeftRightParseResult, csv_parser_hasher::HashMapValue, diff_row::*,
+    csv_parse_result::{
+        CsvByteRecordWithHash, CsvLeftRightParseResult, Position, RecordHash,
+        RecordHashWithPosition,
+    },
+    csv_parser_hasher::HashMapValue,
+    diff_row::*,
 };
 use ahash::AHashMap as HashMap;
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 use std::{
     cmp::Ordering,
     collections::hash_map::IntoIter,
@@ -159,15 +164,16 @@ impl Iterator for DiffByteRecordsIntoIterator {
     }
 }
 
-pub(crate) type CsvHashValueMap = HashMap<u128, HashMapValue>;
+pub(crate) type CsvHashValueMap = HashMap<u128, HashMapValue<Position, RecordHash>>;
+pub(crate) type CsvByteRecordValueMap = HashMap<u128, HashMapValue<csv::ByteRecord>>;
 
-pub struct DiffByteRecordsIterator<R> {
+pub struct DiffByteRecordsSeekIterator<R> {
     buf: Vec<DiffByteRecord>,
-    csv_left_right_parse_results: Receiver<CsvLeftRightParseResult>,
+    csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<RecordHashWithPosition>>,
     csv_records_left_map: CsvHashValueMap,
-    csv_records_left_map_iter: Option<IntoIter<u128, HashMapValue>>,
+    csv_records_left_map_iter: Option<IntoIter<u128, HashMapValue<Position, RecordHash>>>,
     csv_records_right_map: CsvHashValueMap,
-    csv_records_right_map_iter: Option<IntoIter<u128, HashMapValue>>,
+    csv_records_right_map_iter: Option<IntoIter<u128, HashMapValue<Position, RecordHash>>>,
     intermediate_left_map: CsvHashValueMap,
     intermediate_right_map: CsvHashValueMap,
     max_capacity_left_map: usize,
@@ -176,9 +182,9 @@ pub struct DiffByteRecordsIterator<R> {
     csv_seek_right_reader: csv::Reader<R>,
 }
 
-impl<R: Read + Seek> DiffByteRecordsIterator<R> {
+impl<R: Read> DiffByteRecordsSeekIterator<R> {
     pub(crate) fn new(
-        csv_left_right_parse_results: Receiver<CsvLeftRightParseResult>,
+        csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<RecordHashWithPosition>>,
         left_capacity: usize,
         right_capacity: usize,
         left_reader: csv::Reader<R>,
@@ -201,7 +207,7 @@ impl<R: Read + Seek> DiffByteRecordsIterator<R> {
     }
 }
 
-impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
+impl<R: Read + Seek> Iterator for DiffByteRecordsSeekIterator<R> {
     type Item = DiffByteRecord;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -212,8 +218,8 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
             match csv_left_right_parse_result {
                 CsvLeftRightParseResult::Left(left_record_res) => {
                     let pos_left = left_record_res.pos;
-                    let key = left_record_res.key;
-                    let record_hash_left = left_record_res.record_hash;
+                    let key = left_record_res.key();
+                    let record_hash_left = left_record_res.record_hash_num();
                     match self.csv_records_right_map.get_mut(&key) {
                         Some(hash_map_val) => {
                             if let HashMapValue::Initial(ref record_hash_right, ref pos_right) =
@@ -222,7 +228,10 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
                                 if record_hash_left != *record_hash_right {
                                     *hash_map_val = HashMapValue::Modified(pos_left, *pos_right);
                                 } else {
-                                    *hash_map_val = HashMapValue::Equal;
+                                    *hash_map_val = HashMapValue::Equal(
+                                        RecordHash::new(key, record_hash_left),
+                                        RecordHash::new(key, *record_hash_right),
+                                    );
                                 }
                             }
                         }
@@ -239,7 +248,7 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
                             std::mem::take(&mut self.csv_records_right_map);
                         for (k, v) in csv_records_right_map.drain() {
                             match v {
-                                HashMapValue::Equal => {
+                                HashMapValue::Equal(_record_hash_left, _record_hash_right) => {
                                     // nothing to do - will be removed
                                 }
                                 HashMapValue::Initial(_hash, _pos) => {
@@ -302,8 +311,8 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
                 }
                 CsvLeftRightParseResult::Right(right_record_res) => {
                     let pos_right = right_record_res.pos;
-                    let key = right_record_res.key;
-                    let record_hash_right = right_record_res.record_hash;
+                    let key = right_record_res.key();
+                    let record_hash_right = right_record_res.record_hash_num();
                     match self.csv_records_left_map.get_mut(&key) {
                         Some(hash_map_val) => {
                             if let HashMapValue::Initial(ref record_hash_left, ref pos_left) =
@@ -312,7 +321,10 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
                                 if *record_hash_left != record_hash_right {
                                     *hash_map_val = HashMapValue::Modified(*pos_left, pos_right);
                                 } else {
-                                    *hash_map_val = HashMapValue::Equal;
+                                    *hash_map_val = HashMapValue::Equal(
+                                        RecordHash::new(key, *record_hash_left),
+                                        RecordHash::new(key, record_hash_right),
+                                    );
                                 }
                             }
                         }
@@ -329,7 +341,7 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
                             std::mem::take(&mut self.csv_records_left_map);
                         for (k, v) in csv_records_left_map.drain() {
                             match v {
-                                HashMapValue::Equal => {
+                                HashMapValue::Equal(_pos_left, _pos_right) => {
                                     // nothing to do - will be removed
                                 }
                                 HashMapValue::Initial(_hash, _pos) => {
@@ -401,7 +413,8 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
             .csv_records_left_map_iter
             .get_or_insert(std::mem::take(&mut self.csv_records_left_map).into_iter());
 
-        let mut iter_left_map = iter_left_map.skip_while(|(_, v)| matches!(v, HashMapValue::Equal));
+        let mut iter_left_map =
+            iter_left_map.skip_while(|(_, v)| matches!(v, HashMapValue::Equal(..)));
         match iter_left_map.next() {
             Some((_, HashMapValue::Initial(_hash, pos))) => {
                 self.csv_seek_left_reader
@@ -457,7 +470,7 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
             .get_or_insert(std::mem::take(&mut self.csv_records_right_map).into_iter());
 
         let mut iter_right_map =
-            iter_right_map.skip_while(|(_, v)| matches!(v, HashMapValue::Equal));
+            iter_right_map.skip_while(|(_, v)| matches!(v, HashMapValue::Equal(..)));
         match iter_right_map.next() {
             Some((_, HashMapValue::Initial(_hash, pos))) => {
                 self.csv_seek_right_reader
@@ -502,6 +515,348 @@ impl<R: Read + Seek> Iterator for DiffByteRecordsIterator<R> {
                 return Some(DiffByteRecord::Modify {
                     add: ByteRecordLineInfo::new(right_byte_record, pos_right.line),
                     delete: ByteRecordLineInfo::new(left_byte_record, pos_left.line),
+                    field_indices: fields_modified,
+                });
+            }
+            _ => (),
+        }
+        None
+    }
+}
+
+pub struct DiffByteRecordsIterator {
+    buf: Vec<DiffByteRecord>,
+    csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
+    csv_records_left_map: CsvByteRecordValueMap,
+    csv_records_left_map_iter: Option<IntoIter<u128, HashMapValue<csv::ByteRecord>>>,
+    csv_records_right_map: CsvByteRecordValueMap,
+    csv_records_right_map_iter: Option<IntoIter<u128, HashMapValue<csv::ByteRecord>>>,
+    intermediate_left_map: CsvByteRecordValueMap,
+    intermediate_right_map: CsvByteRecordValueMap,
+    max_capacity_left_map: usize,
+    max_capacity_right_map: usize,
+    sender_csv_records_rcycl: Sender<csv::ByteRecord>,
+}
+
+impl DiffByteRecordsIterator {
+    pub(crate) fn new(
+        csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
+        left_capacity: usize,
+        right_capacity: usize,
+        sender_csv_records_rcycl: Sender<csv::ByteRecord>,
+    ) -> Self {
+        Self {
+            buf: Default::default(),
+            csv_left_right_parse_results,
+            csv_records_left_map: HashMap::with_capacity(left_capacity),
+            csv_records_left_map_iter: None,
+            csv_records_right_map: HashMap::with_capacity(right_capacity),
+            csv_records_right_map_iter: None,
+            intermediate_left_map: HashMap::new(),
+            intermediate_right_map: HashMap::new(),
+            max_capacity_left_map: left_capacity,
+            max_capacity_right_map: right_capacity,
+            sender_csv_records_rcycl,
+        }
+    }
+}
+
+impl Iterator for DiffByteRecordsIterator {
+    type Item = DiffByteRecord;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.buf.is_empty() {
+            return self.buf.pop();
+        }
+        while let Ok(csv_left_right_parse_result) = self.csv_left_right_parse_results.recv() {
+            match csv_left_right_parse_result {
+                CsvLeftRightParseResult::Left(left_record_res) => {
+                    let record_hash_left = left_record_res.record_hash;
+                    let byte_record_left = left_record_res.byte_record;
+                    let byte_record_left_line =
+                        // TODO: the closure _might_ be a performance bottleneck!?
+                        byte_record_left.position().map_or(0, |pos| pos.line());
+                    match self.csv_records_right_map.get_mut(&record_hash_left.key) {
+                        Some(hash_map_val) => {
+                            if let HashMapValue::Initial(record_hash_right, byte_record_right) =
+                                hash_map_val
+                            {
+                                if record_hash_left.record_hash != *record_hash_right {
+                                    *hash_map_val = HashMapValue::Modified(
+                                        byte_record_left,
+                                        std::mem::take(byte_record_right),
+                                    );
+                                } else {
+                                    *hash_map_val = HashMapValue::Equal(
+                                        byte_record_left,
+                                        std::mem::take(byte_record_right),
+                                    );
+                                }
+                            }
+                        }
+                        None => {
+                            self.csv_records_left_map.insert(
+                                record_hash_left.key,
+                                HashMapValue::Initial(
+                                    record_hash_left.record_hash,
+                                    byte_record_left,
+                                ),
+                            );
+                        }
+                    }
+                    if self.max_capacity_right_map > 0
+                        && byte_record_left_line % self.max_capacity_right_map as u64 == 0
+                    {
+                        // in order to circumvent borrowing issues in closure
+                        let mut csv_records_right_map =
+                            std::mem::take(&mut self.csv_records_right_map);
+                        for (k, v) in csv_records_right_map.drain() {
+                            match v {
+                                HashMapValue::Equal(byte_record_left, byte_record_right) => {
+                                    // can be recycled, so we send it upstream;
+                                    // if receiver is already gone, we ignore the error that occurs when sending,
+                                    // which only leads to the byte record not being recycled (it can't be recycled,
+                                    // because upstream has finished it's work)
+                                    let _ = self.sender_csv_records_rcycl.send(byte_record_left);
+                                    let _ = self.sender_csv_records_rcycl.send(byte_record_right);
+                                }
+                                HashMapValue::Initial(_hash, ref _byte_record) => {
+                                    // put it back, because we don't know what to do with this value yet
+                                    self.intermediate_right_map.insert(k, v);
+                                }
+                                HashMapValue::Modified(left_byte_record, right_byte_record) => {
+                                    let fields_modified = left_byte_record
+                                        .iter()
+                                        .enumerate()
+                                        .zip(right_byte_record.iter())
+                                        .fold(
+                                            Vec::new(),
+                                            |mut acc, ((idx, field_left), field_right)| {
+                                                if field_left != field_right {
+                                                    acc.push(idx);
+                                                }
+                                                acc
+                                            },
+                                        );
+                                    let left_byte_record_line = left_byte_record
+                                        .position()
+                                        // TODO: handle error (although it shouldn't error here)
+                                        .expect("a record position")
+                                        .line();
+                                    let right_byte_record_line = right_byte_record
+                                        .position()
+                                        // TODO: handle error (although it shouldn't error here)
+                                        .expect("a record position")
+                                        .line();
+                                    self.buf.push(DiffByteRecord::Modify {
+                                        add: ByteRecordLineInfo::new(
+                                            right_byte_record,
+                                            right_byte_record_line,
+                                        ),
+                                        delete: ByteRecordLineInfo::new(
+                                            left_byte_record,
+                                            left_byte_record_line,
+                                        ),
+                                        field_indices: fields_modified,
+                                    });
+                                }
+                            }
+                        }
+                        self.csv_records_right_map = csv_records_right_map;
+                        std::mem::swap(
+                            &mut self.intermediate_right_map,
+                            &mut self.csv_records_right_map,
+                        );
+                        if !self.buf.is_empty() {
+                            break;
+                        }
+                    }
+                }
+                CsvLeftRightParseResult::Right(right_record_res) => {
+                    let record_hash_right = right_record_res.record_hash;
+                    let byte_record_right = right_record_res.byte_record;
+                    // TODO: the closure _might_ be a performance bottleneck!?
+                    let byte_record_right_line =
+                        byte_record_right.position().map_or(0, |pos| pos.line());
+                    match self.csv_records_left_map.get_mut(&record_hash_right.key) {
+                        Some(hash_map_val) => {
+                            if let HashMapValue::Initial(record_hash_left, byte_record_left) =
+                                hash_map_val
+                            {
+                                if *record_hash_left != record_hash_right.record_hash {
+                                    *hash_map_val = HashMapValue::Modified(
+                                        std::mem::take(byte_record_left),
+                                        byte_record_right,
+                                    );
+                                } else {
+                                    *hash_map_val = HashMapValue::Equal(
+                                        std::mem::take(byte_record_left),
+                                        byte_record_right,
+                                    );
+                                }
+                            }
+                        }
+                        None => {
+                            self.csv_records_right_map.insert(
+                                record_hash_right.key,
+                                HashMapValue::Initial(
+                                    record_hash_right.record_hash,
+                                    byte_record_right,
+                                ),
+                            );
+                        }
+                    }
+                    if self.max_capacity_left_map > 0
+                        && byte_record_right_line % self.max_capacity_left_map as u64 == 0
+                    {
+                        // in order to circumvent borrowing issues in closure
+                        let mut csv_records_left_map =
+                            std::mem::take(&mut self.csv_records_left_map);
+                        for (k, v) in csv_records_left_map.drain() {
+                            match v {
+                                HashMapValue::Equal(byte_record_left, byte_record_right) => {
+                                    // can be recycled, so we send it upstream;
+                                    // if receiver is already gone, we ignore the error that occurs when sending,
+                                    // which only leads to the byte record not being recycled (it can't be recycled,
+                                    // because upstream has finished it's work)
+                                    let _ = self.sender_csv_records_rcycl.send(byte_record_left);
+                                    let _ = self.sender_csv_records_rcycl.send(byte_record_right);
+                                }
+                                HashMapValue::Initial(_hash, ref _byte_record) => {
+                                    // put it back, because we don't know what to do with this value yet
+                                    self.intermediate_left_map.insert(k, v);
+                                }
+                                HashMapValue::Modified(left_byte_record, right_byte_record) => {
+                                    let fields_modified = left_byte_record
+                                        .iter()
+                                        .enumerate()
+                                        .zip(right_byte_record.iter())
+                                        .fold(
+                                            Vec::new(),
+                                            |mut acc, ((idx, field_left), field_right)| {
+                                                if field_left != field_right {
+                                                    acc.push(idx);
+                                                }
+                                                acc
+                                            },
+                                        );
+                                    let left_byte_record_line = left_byte_record
+                                        .position()
+                                        .expect("a record position")
+                                        .line();
+                                    let right_byte_record_line = right_byte_record
+                                        .position()
+                                        .expect("a record position")
+                                        .line();
+                                    self.buf.push(DiffByteRecord::Modify {
+                                        add: ByteRecordLineInfo::new(
+                                            right_byte_record,
+                                            right_byte_record_line,
+                                        ),
+                                        delete: ByteRecordLineInfo::new(
+                                            left_byte_record,
+                                            left_byte_record_line,
+                                        ),
+                                        field_indices: fields_modified,
+                                    });
+                                }
+                            }
+                        }
+                        self.csv_records_left_map = csv_records_left_map;
+                        std::mem::swap(
+                            &mut self.intermediate_left_map,
+                            &mut self.csv_records_left_map,
+                        );
+                        if !self.buf.is_empty() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if !self.buf.is_empty() {
+            return self.buf.pop();
+        }
+
+        let iter_left_map = self
+            .csv_records_left_map_iter
+            .get_or_insert(std::mem::take(&mut self.csv_records_left_map).into_iter());
+
+        let mut iter_left_map =
+            iter_left_map.skip_while(|(_, v)| matches!(v, HashMapValue::Equal(_, _)));
+        match iter_left_map.next() {
+            Some((_, HashMapValue::Initial(_hash, byte_record))) => {
+                let line = byte_record.position().expect("a record position").line();
+                return Some(DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                    byte_record,
+                    line,
+                )));
+            }
+            Some((_, HashMapValue::Modified(left_byte_record, right_byte_record))) => {
+                let fields_modified = left_byte_record
+                    .iter()
+                    .enumerate()
+                    .zip(right_byte_record.iter())
+                    .fold(Vec::new(), |mut acc, ((idx, field_left), field_right)| {
+                        if field_left != field_right {
+                            acc.push(idx);
+                        }
+                        acc
+                    });
+                let left_byte_record_line = left_byte_record
+                    .position()
+                    .expect("a record position")
+                    .line();
+                let right_byte_record_line = right_byte_record
+                    .position()
+                    .expect("a record position")
+                    .line();
+                return Some(DiffByteRecord::Modify {
+                    add: ByteRecordLineInfo::new(right_byte_record, right_byte_record_line),
+                    delete: ByteRecordLineInfo::new(left_byte_record, left_byte_record_line),
+                    field_indices: fields_modified,
+                });
+            }
+            _ => (),
+        }
+
+        let iter_right_map = self
+            .csv_records_right_map_iter
+            .get_or_insert(std::mem::take(&mut self.csv_records_right_map).into_iter());
+
+        let mut iter_right_map =
+            iter_right_map.skip_while(|(_, v)| matches!(v, HashMapValue::Equal(_, _)));
+        match iter_right_map.next() {
+            Some((_, HashMapValue::Initial(_hash, byte_record))) => {
+                let line = byte_record.position().expect("a record position").line();
+                return Some(DiffByteRecord::Add(ByteRecordLineInfo::new(
+                    byte_record,
+                    line,
+                )));
+            }
+            Some((_, HashMapValue::Modified(left_byte_record, right_byte_record))) => {
+                let fields_modified = left_byte_record
+                    .iter()
+                    .enumerate()
+                    .zip(right_byte_record.iter())
+                    .fold(Vec::new(), |mut acc, ((idx, field_left), field_right)| {
+                        if field_left != field_right {
+                            acc.push(idx);
+                        }
+                        acc
+                    });
+                let left_byte_record_line = left_byte_record
+                    .position()
+                    .expect("a record position")
+                    .line();
+                let right_byte_record_line = right_byte_record
+                    .position()
+                    .expect("a record position")
+                    .line();
+                return Some(DiffByteRecord::Modify {
+                    add: ByteRecordLineInfo::new(right_byte_record, right_byte_record_line),
+                    delete: ByteRecordLineInfo::new(left_byte_record, left_byte_record_line),
                     field_indices: fields_modified,
                 });
             }

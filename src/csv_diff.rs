@@ -1,8 +1,8 @@
 use crate::csv::Csv;
 use crate::csv_hash_receiver_comparer::{CsvHashReceiverComparer, CsvHashReceiverStreamComparer};
 use crate::csv_hash_task_spawner::{
-    CsvHashTaskLineSenders, CsvHashTaskSenders, CsvHashTaskSpawner, CsvHashTaskSpawnerLocal,
-    CsvHashTaskSpawnerLocalBuilder, CsvHashTaskSpawnerRayon,
+    CsvHashTaskLineSenders, CsvHashTaskSendersWithRecycleReceiver, CsvHashTaskSpawner,
+    CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder, CsvHashTaskSpawnerRayon,
 };
 #[cfg(feature = "crossbeam-threads")]
 use crate::csv_hash_task_spawner::{
@@ -12,9 +12,9 @@ use crate::csv_hash_task_spawner::{
 use crate::csv_hash_task_spawner::{
     CsvHashTaskSpawnerLocalBuilderRayon, CsvHashTaskSpawnerLocalRayon,
 };
-use crate::csv_parse_result::CsvLeftRightParseResult;
-use crate::diff_result::DiffByteRecords;
-use crate::diff_result::DiffByteRecordsIterator;
+use crate::csv_parse_result::{CsvLeftRightParseResult, RecordHashWithPosition};
+use crate::diff_result::DiffByteRecordsSeekIterator;
+use crate::diff_result::{DiffByteRecords, DiffByteRecordsIterator};
 use crate::thread_scope_strategy::*;
 use crossbeam_channel::Receiver;
 use csv::Reader;
@@ -47,36 +47,36 @@ impl<T> CsvByteDiff<T>
 where
     T: CsvHashTaskSpawner,
 {
-    pub fn diff<R: Read + Clone + Seek + Send + 'static>(
+    pub fn diff<R: Read + Clone + Send + 'static>(
         // TODO: it is unfortunate that we have to borrow as mutable;
         // find a way to borrow immutable
         &mut self,
         csv_left: Csv<R>,
         csv_right: Csv<R>,
-    ) -> DiffByteRecordsIterator<R> {
-        use crossbeam_channel::unbounded;
+    ) -> DiffByteRecordsIterator {
+        use crossbeam_channel::{bounded, unbounded};
 
-        let (sender_right, receiver) = unbounded();
+        let (sender_right, receiver) = bounded(10_000);
         let sender_left = sender_right.clone();
+
+        let (sender_csv_recycle, receiver_csv_recycle) = unbounded();
 
         let hts = self.hash_task_spawner.take();
 
         let (hash_task_spawner, receiver_diff_byte_record_iter) =
             // TODO: remove unwrap!!!
             hts.unwrap().spawn_hashing_tasks_and_send_result(
-                CsvHashTaskSenders::new(
+                CsvHashTaskSendersWithRecycleReceiver::new(
                     sender_left,
                     csv_left.clone(),
+                    receiver_csv_recycle.clone()
                 ),
-                CsvHashTaskSenders::new(
+                CsvHashTaskSendersWithRecycleReceiver::new(
                     sender_right,
                     csv_right.clone(),
+                    receiver_csv_recycle
                 ),
-                CsvHashReceiverStreamComparer {
-                    csv_reader_left: csv_left.into(),
-                    csv_reader_right: csv_right.into(),
-                    receiver
-                },
+                CsvHashReceiverStreamComparer::new(receiver, sender_csv_recycle),
                 self.primary_key_columns.clone(),
             );
 
@@ -445,8 +445,8 @@ where
         receiver_total_lines_right: Receiver<u64>,
         receiver_csv_reader_left: Receiver<csv::Result<Reader<R>>>,
         receiver_csv_reader_right: Receiver<csv::Result<Reader<R>>>,
-        receiver: Receiver<CsvLeftRightParseResult>,
-    ) -> csv::Result<DiffByteRecordsIterator<R>>
+        receiver: Receiver<CsvLeftRightParseResult<RecordHashWithPosition>>,
+    ) -> csv::Result<DiffByteRecordsSeekIterator<R>>
     where
         R: Read + Seek + Send,
     {
