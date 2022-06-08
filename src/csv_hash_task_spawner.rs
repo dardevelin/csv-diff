@@ -134,6 +134,12 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
         let prim_key_columns_clone = primary_key_columns.clone();
 
         self.thread_pool.spawn(move || {
+            sender
+                .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
+                .unwrap();
+        });
+
+        self.thread_pool.spawn(move || {
             Self::parse_hash_and_send_for_compare::<R, CsvParseResultLeft<CsvByteRecordWithHash>>(
                 csv_hash_task_senders_left,
                 primary_key_columns,
@@ -145,12 +151,6 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
                 csv_hash_task_senders_right,
                 prim_key_columns_clone,
             );
-        });
-
-        self.thread_pool.spawn(move || {
-            sender
-                .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
-                .unwrap();
         });
 
         (self, receiver)
