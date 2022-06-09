@@ -21,7 +21,7 @@ cache:
 build:cargo:
   stage: build
   variables:
-    CARGO_TARPAULIN_VERSION: "0.19.0"
+    CARGO_TARPAULIN_VERSION: "0.20.1"
   script:
     # Install tools for code coverage report
     - PATH=.cargo/bin:$PATH
