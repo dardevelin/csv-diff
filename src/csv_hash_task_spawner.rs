@@ -5,6 +5,7 @@ use std::{
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use csv::{Error, Reader};
+#[cfg(feature = "rayon-threads")]
 use mown::Mown;
 
 #[cfg(feature = "crossbeam-threads")]
@@ -107,6 +108,7 @@ pub struct CsvHashTaskSpawnerRayon<'tp> {
     thread_pool: Mown<'tp, rayon::ThreadPool>,
 }
 
+#[cfg(feature = "rayon-threads")]
 impl<'tp> CsvHashTaskSpawnerRayon<'tp> {
     pub fn with_thread_pool_ref(thread_pool: &'tp rayon::ThreadPool) -> Self {
         Self {
@@ -121,6 +123,7 @@ impl<'tp> CsvHashTaskSpawnerRayon<'tp> {
     }
 }
 
+#[cfg(feature = "rayon-threads")]
 impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
     fn spawn_hashing_tasks_and_send_result<R: Read + Send + 'static>(
         self,
@@ -255,8 +258,8 @@ impl CsvHashTaskSpawnerLocalCrossbeam {
 impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalCrossbeam {
     fn spawn_hashing_tasks_and_send_result<R>(
         &self,
-        csv_hash_task_senders_left: CsvHashTaskSendersWithRecycleReceiver<R>,
-        csv_hash_task_senders_right: CsvHashTaskSendersWithRecycleReceiver<R>,
+        csv_hash_task_senders_left: CsvHashTaskLineSenders<R>,
+        csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
         csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
     ) -> Receiver<Result<DiffByteRecordsSeekIterator<R>, Error>>
@@ -267,16 +270,16 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalCrossbeam {
         self.thread_scoper.scope(move |s| {
             s.spawn(move |ss| {
                 ss.spawn(move |_s1| {
-                    self.parse_hash_and_send_for_compare::<R, CsvParseResultLeft>(
-                        csv_hash_task_senders_left,
-                        primary_key_columns,
-                    );
+                    Self::parse_hash_and_send_for_compare::<
+                        R,
+                        CsvParseResultLeft<RecordHashWithPosition>,
+                    >(csv_hash_task_senders_left, primary_key_columns);
                 });
                 ss.spawn(move |_s2| {
-                    self.parse_hash_and_send_for_compare::<R, CsvParseResultRight>(
-                        csv_hash_task_senders_right,
-                        primary_key_columns,
-                    );
+                    Self::parse_hash_and_send_for_compare::<
+                        R,
+                        CsvParseResultRight<RecordHashWithPosition>,
+                    >(csv_hash_task_senders_right, primary_key_columns);
                 });
                 sender
                     .send(csv_hash_receiver_comparer.recv_hashes_and_compare())

@@ -1,8 +1,10 @@
 use crate::csv::Csv;
 use crate::csv_hash_receiver_comparer::{CsvHashReceiverComparer, CsvHashReceiverStreamComparer};
+#[cfg(feature = "rayon-threads")]
+use crate::csv_hash_task_spawner::CsvHashTaskSpawnerRayon;
 use crate::csv_hash_task_spawner::{
     CsvHashTaskLineSenders, CsvHashTaskSendersWithRecycleReceiver, CsvHashTaskSpawner,
-    CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder, CsvHashTaskSpawnerRayon,
+    CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder,
 };
 #[cfg(feature = "crossbeam-threads")]
 use crate::csv_hash_task_spawner::{
