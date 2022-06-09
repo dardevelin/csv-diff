@@ -47,7 +47,7 @@ impl<T> CsvByteDiff<T>
 where
     T: CsvHashTaskSpawner,
 {
-    pub fn diff<R: Read + Clone + Send + 'static>(
+    pub fn diff<R: Read + Send + 'static>(
         // TODO: it is unfortunate that we have to borrow as mutable;
         // find a way to borrow immutable
         &mut self,
@@ -68,12 +68,12 @@ where
             hts.unwrap().spawn_hashing_tasks_and_send_result(
                 CsvHashTaskSendersWithRecycleReceiver::new(
                     sender_left,
-                    csv_left.clone(),
+                    csv_left,
                     receiver_csv_recycle.clone()
                 ),
                 CsvHashTaskSendersWithRecycleReceiver::new(
                     sender_right,
-                    csv_right.clone(),
+                    csv_right,
                     receiver_csv_recycle
                 ),
                 CsvHashReceiverStreamComparer::new(receiver, sender_csv_recycle),
@@ -388,7 +388,7 @@ where
     # }
     "##
     )]
-    pub fn diff<R: Read + Clone + Seek + Send>(
+    pub fn diff<R: Read + Seek + Send>(
         &self,
         csv_left: Csv<R>,
         csv_right: Csv<R>,

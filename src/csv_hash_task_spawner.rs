@@ -26,13 +26,13 @@ use crate::{
     },
 };
 
-pub struct CsvHashTaskSendersWithRecycleReceiver<R: Read + Clone> {
+pub struct CsvHashTaskSendersWithRecycleReceiver<R: Read> {
     sender: Sender<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
     csv: Csv<R>,
     receiver_recycle_csv: Receiver<csv::ByteRecord>,
 }
 
-impl<R: Read + Clone> CsvHashTaskSendersWithRecycleReceiver<R> {
+impl<R: Read> CsvHashTaskSendersWithRecycleReceiver<R> {
     pub(crate) fn new(
         sender: Sender<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
         csv: Csv<R>,
@@ -46,14 +46,14 @@ impl<R: Read + Clone> CsvHashTaskSendersWithRecycleReceiver<R> {
     }
 }
 
-pub struct CsvHashTaskLineSenders<R: Read + Clone> {
+pub struct CsvHashTaskLineSenders<R: Read> {
     sender: Sender<CsvLeftRightParseResult<RecordHashWithPosition>>,
     sender_total_lines: Sender<u64>,
     sender_csv_reader: Sender<csv::Result<Reader<R>>>,
     csv: Csv<R>,
 }
 
-impl<R: Read + Clone> CsvHashTaskLineSenders<R> {
+impl<R: Read> CsvHashTaskLineSenders<R> {
     pub(crate) fn new(
         sender: Sender<CsvLeftRightParseResult<RecordHashWithPosition>>,
         sender_total_lines: Sender<u64>,
@@ -70,7 +70,7 @@ impl<R: Read + Clone> CsvHashTaskLineSenders<R> {
 }
 
 pub trait CsvHashTaskSpawner {
-    fn spawn_hashing_tasks_and_send_result<R: Clone + Read + Send + 'static>(
+    fn spawn_hashing_tasks_and_send_result<R: Read + Send + 'static>(
         self,
         csv_hash_task_senders_left: CsvHashTaskSendersWithRecycleReceiver<R>,
         csv_hash_task_senders_right: CsvHashTaskSendersWithRecycleReceiver<R>,
@@ -87,7 +87,7 @@ pub trait CsvHashTaskSpawner {
         primary_key_columns: HashSet<usize>,
     ) -> csv::Result<()>
     where
-        R: Read + Clone + Send,
+        R: Read + Send,
         P: CsvParseResult<CsvLeftRightParseResult<CsvByteRecordWithHash>, CsvByteRecordWithHash>,
     {
         let mut csv_parser_hasher: CsvParserHasherSender<
@@ -122,7 +122,7 @@ impl<'tp> CsvHashTaskSpawnerRayon<'tp> {
 }
 
 impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
-    fn spawn_hashing_tasks_and_send_result<R: Clone + Read + Send + 'static>(
+    fn spawn_hashing_tasks_and_send_result<R: Read + Send + 'static>(
         self,
         csv_hash_task_senders_left: CsvHashTaskSendersWithRecycleReceiver<R>,
         csv_hash_task_senders_right: CsvHashTaskSendersWithRecycleReceiver<R>,
@@ -158,7 +158,7 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
 }
 
 pub trait CsvHashTaskSpawnerLocal {
-    fn spawn_hashing_tasks_and_send_result<R: Read + Clone + Seek + Send>(
+    fn spawn_hashing_tasks_and_send_result<R: Read + Seek + Send>(
         &self,
         csv_hash_task_senders_left: CsvHashTaskLineSenders<R>,
         csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
@@ -170,7 +170,7 @@ pub trait CsvHashTaskSpawnerLocal {
         csv_hash_task_senders: CsvHashTaskLineSenders<R>,
         primary_key_columns: &HashSet<usize>,
     ) where
-        R: Read + Clone + Seek + Send,
+        R: Read + Seek + Send,
         P: CsvParseResult<CsvLeftRightParseResult<RecordHashWithPosition>, RecordHashWithPosition>,
     {
         let mut csv_parser_hasher: CsvParserHasherLinesSender<
@@ -212,7 +212,7 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalRayon<'_> {
         primary_key_columns: &HashSet<usize>,
     ) -> Receiver<Result<DiffByteRecordsSeekIterator<R>, Error>>
     where
-        R: Read + Clone + Seek + Send,
+        R: Read + Seek + Send,
     {
         let (sender, receiver) = unbounded();
         self.thread_scoper.scope(move |s| {

@@ -269,7 +269,7 @@ mod integration_test {
                 primary_key_columns: &HashSet<usize>,
             ) -> Receiver<csv::Result<DiffByteRecordsSeekIterator<R>>>
             where
-                R: Read + Clone + Seek + Send,
+                R: Read + Seek + Send,
             {
                 let (sender, receiver) = unbounded();
                 self.pool.scoped(move |s| {
