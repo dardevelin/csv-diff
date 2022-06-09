@@ -1,6 +1,6 @@
 #![cfg(feature = "rayon-threads")]
 
-use ::csv_diff::csv::{Csv, IoArcAsRef};
+use ::csv_diff::csv::Csv;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use csv_diff::csv_diff;
 use std::{fmt::Display, io::Cursor};
@@ -74,12 +74,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                     |(csv_left_1, csv_left_2)| {
                         csv_byte_diff
                             .diff(
-                                Csv::with_reader_seek(Cursor::new(IoArcAsRef(io_arc::IoArc::new(
-                                    csv_left_1,
-                                )))),
-                                Csv::with_reader_seek(Cursor::new(IoArcAsRef(io_arc::IoArc::new(
-                                    csv_left_2,
-                                )))),
+                                Csv::with_reader(Cursor::new(csv_left_1)),
+                                Csv::with_reader(Cursor::new(csv_left_2)),
                             )
                             .for_each(drop);
                     },

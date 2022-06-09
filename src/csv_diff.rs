@@ -1616,8 +1616,6 @@ mod tests {
     #[test]
     fn diff_streaming_multiple_lines_with_header_added_modified_deleted_multiple(
     ) -> Result<(), Box<dyn Error>> {
-        use crate::csv::IoArcAsRef;
-
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c\n\
@@ -1630,12 +1628,8 @@ mod tests {
                         g,h,x";
 
         let mut diff_res_actual = CsvByteDiff::new()?.diff(
-            Csv::with_reader_seek(Cursor::new(IoArcAsRef(io_arc::IoArc::new(
-                csv_left.as_bytes(),
-            )))),
-            Csv::with_reader_seek(Cursor::new(IoArcAsRef(io_arc::IoArc::new(
-                csv_right.as_bytes(),
-            )))),
+            Csv::with_reader(Cursor::new(csv_left.as_bytes())),
+            Csv::with_reader(Cursor::new(csv_right.as_bytes())),
         );
         let mut diff_res_expected = DiffByteRecords(vec![
             DiffByteRecord::Modify {

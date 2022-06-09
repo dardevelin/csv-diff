@@ -97,17 +97,3 @@ where
         self
     }
 }
-
-#[derive(Clone)]
-pub struct IoArcAsRef<T>(pub io_arc::IoArc<T>)
-where
-    T: AsRef<[u8]> + Send;
-
-impl<T> AsRef<[u8]> for IoArcAsRef<T>
-where
-    T: AsRef<[u8]> + Send,
-{
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref().as_ref()
-    }
-}

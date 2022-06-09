@@ -4,10 +4,7 @@ use crate::{
 };
 use crossbeam_channel::{Receiver, Sender};
 use csv::Reader;
-use std::{
-    io::{Read, Seek},
-    sync::Arc,
-};
+use std::io::{Read, Seek};
 
 pub struct CsvHashReceiverComparer<R: Read + Seek + Send> {
     // TODO: make it more private

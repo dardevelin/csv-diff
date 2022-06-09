@@ -1,5 +1,5 @@
 use criterion::black_box;
-use csv_diff::csv::{Csv, IoArcAsRef};
+use csv_diff::csv::Csv;
 use csv_diff::csv_diff::*;
 use std::io::Cursor;
 use utils::csv_generator::*;
@@ -20,8 +20,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let res = black_box(
         csv_byte_diff
             .diff(
-                Csv::with_reader_seek(Cursor::new(IoArcAsRef(io_arc::IoArc::new(csv_left_1)))),
-                Csv::with_reader_seek(Cursor::new(IoArcAsRef(io_arc::IoArc::new(csv_left_2)))),
+                Csv::with_reader(Cursor::new(csv_left_1)),
+                Csv::with_reader(Cursor::new(csv_left_2)),
             )
             .for_each(drop),
     );
