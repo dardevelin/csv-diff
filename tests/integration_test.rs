@@ -233,13 +233,11 @@ mod integration_test {
         use super::*;
         use crossbeam_channel::{unbounded, Receiver};
         use csv_diff::{
-            csv_hash_receiver_comparer::CsvHashReceiverComparer,
             csv_hash_task_spawner::{
                 CsvHashTaskLineSenders, CsvHashTaskSendersWithRecycleReceiver,
                 CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder,
             },
             csv_parse_result::{CsvParseResultLeft, CsvParseResultRight, RecordHashWithPosition},
-            diff_result::DiffByteRecordsSeekIterator,
         };
         use pretty_assertions::assert_eq;
         use std::{
@@ -265,13 +263,10 @@ mod integration_test {
                 &self,
                 csv_hash_task_senders_left: CsvHashTaskLineSenders<R>,
                 csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
-                csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
                 primary_key_columns: &HashSet<usize>,
-            ) -> Receiver<csv::Result<DiffByteRecordsSeekIterator<R>>>
-            where
+            ) where
                 R: Read + Seek + Send,
             {
-                let (sender, receiver) = unbounded();
                 self.pool.scoped(move |s| {
                     s.recurse(move |s| {
                         s.execute(move || {
@@ -290,12 +285,8 @@ mod integration_test {
                                 csv_hash_task_senders_right, primary_key_columns
                             );
                         });
-                        sender
-                            .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
-                            .unwrap();
                     });
                 });
-                receiver
             }
         }
 

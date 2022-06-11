@@ -8,6 +8,9 @@ use csv::{Error, Reader};
 #[cfg(feature = "rayon-threads")]
 use mown::Mown;
 
+use crate::csv_parse_result::{
+    CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight,
+};
 #[cfg(feature = "crossbeam-threads")]
 use crate::thread_scope_strategy::CrossbeamScope;
 #[cfg(feature = "rayon-threads")]
@@ -17,14 +20,8 @@ use crate::{
     csv_hash_receiver_comparer::CsvHashReceiverStreamComparer,
     csv_parse_result::{CsvByteRecordWithHash, RecordHashWithPosition},
     csv_parser_hasher::{CsvParserHasherLinesSender, CsvParserHasherSender},
-    diff_result::{DiffByteRecordsIterator, DiffByteRecordsSeekIterator},
+    diff_result::{DiffByteRecords, DiffByteRecordsIterator},
     thread_scope_strategy::ThreadScoper,
-};
-use crate::{
-    csv_hash_receiver_comparer::{self, CsvHashReceiverComparer},
-    csv_parse_result::{
-        CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight,
-    },
 };
 
 pub struct CsvHashTaskSendersWithRecycleReceiver<R: Read> {
@@ -165,9 +162,8 @@ pub trait CsvHashTaskSpawnerLocal {
         &self,
         csv_hash_task_senders_left: CsvHashTaskLineSenders<R>,
         csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
-        csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
-    ) -> Receiver<csv::Result<DiffByteRecordsSeekIterator<R>>>;
+    );
 
     fn parse_hash_and_send_for_compare<R, P>(
         csv_hash_task_senders: CsvHashTaskLineSenders<R>,
@@ -211,13 +207,10 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalRayon<'_> {
         &self,
         csv_hash_task_senders_left: CsvHashTaskLineSenders<R>,
         csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
-        csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
-    ) -> Receiver<Result<DiffByteRecordsSeekIterator<R>, Error>>
-    where
+    ) where
         R: Read + Seek + Send,
     {
-        let (sender, receiver) = unbounded();
         self.thread_scoper.scope(move |s| {
             s.spawn(move |ss| {
                 ss.spawn(move |_s1| {
@@ -232,12 +225,8 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalRayon<'_> {
                         CsvParseResultRight<RecordHashWithPosition>,
                     >(csv_hash_task_senders_right, primary_key_columns);
                 });
-                sender
-                    .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
-                    .unwrap();
             });
         });
-        receiver
     }
 }
 
@@ -260,13 +249,10 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalCrossbeam {
         &self,
         csv_hash_task_senders_left: CsvHashTaskLineSenders<R>,
         csv_hash_task_senders_right: CsvHashTaskLineSenders<R>,
-        csv_hash_receiver_comparer: CsvHashReceiverComparer<R>,
         primary_key_columns: &HashSet<usize>,
-    ) -> Receiver<Result<DiffByteRecordsSeekIterator<R>, Error>>
-    where
+    ) where
         R: Read + Seek + Send,
     {
-        let (sender, receiver) = unbounded();
         self.thread_scoper.scope(move |s| {
             s.spawn(move |ss| {
                 ss.spawn(move |_s1| {
@@ -281,12 +267,8 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalCrossbeam {
                         CsvParseResultRight<RecordHashWithPosition>,
                     >(csv_hash_task_senders_right, primary_key_columns);
                 });
-                sender
-                    .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
-                    .unwrap();
             });
         });
-        receiver
     }
 }
 
