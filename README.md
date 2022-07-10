@@ -33,7 +33,7 @@ This crate is still in it's infancy. There will be breaking changes (and dragons
 
 ## Highlights ✨
 - fastest CSV-diffing library in the world🚀
-    - compare two CSVs with 1,000,000 rows x 9 columns in __under 500ms__
+    - compare two CSVs with 1,000,000 rows x 9 columns in __under 600ms__
 - thread-pool agnostic 🧵🧶
     - use your existing thread-pool (e.g. [rayon][rayon]) or use threads directly (via [crossbeam][crossbeam-scope]); configurable via [Cargo features](#getting-started)
     - _caveat: thread-spawning must support [scoped threads][crossbeam-scope]_
