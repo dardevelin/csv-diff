@@ -53,7 +53,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                 CsvLeftRightParseResult::Left(left_record_res) => {
                     let pos_left = left_record_res.pos;
                     let key = left_record_res.key();
-                    let record_hash_left = left_record_res.record_hash.record_hash;
+                    let record_hash_left = left_record_res.record_hash_num();
                     match self.csv_records_right_map.get_mut(&key) {
                         Some(hash_map_val) => {
                             if let HashMapValue::Initial(ref record_hash_right, ref pos_right) =
@@ -143,27 +143,25 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                 CsvLeftRightParseResult::Right(right_record_res) => {
                     let pos_right = right_record_res.pos;
                     let key = right_record_res.key();
-                    let record_hash_right = right_record_res.record_hash;
+                    let record_hash_right = right_record_res.record_hash_num();
                     match self.csv_records_left_map.get_mut(&key) {
                         Some(hash_map_val) => {
                             if let HashMapValue::Initial(ref record_hash_left, ref pos_left) =
                                 hash_map_val
                             {
-                                if *record_hash_left != record_hash_right.record_hash {
+                                if *record_hash_left != record_hash_right {
                                     *hash_map_val = HashMapValue::Modified(*pos_left, pos_right);
                                 } else {
                                     *hash_map_val = HashMapValue::Equal(
                                         RecordHash::new(key, *record_hash_left),
-                                        record_hash_right,
+                                        right_record_res.record_hash,
                                     );
                                 }
                             }
                         }
                         None => {
-                            self.csv_records_right_map.insert(
-                                key,
-                                HashMapValue::Initial(record_hash_right.record_hash, pos_right),
-                            );
+                            self.csv_records_right_map
+                                .insert(key, HashMapValue::Initial(record_hash_right, pos_right));
                         }
                     }
                     if self.max_capacity_left_map > 0
