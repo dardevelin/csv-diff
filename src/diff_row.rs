@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum DiffByteRecord {
     Add(ByteRecordLineInfo),
     Modify {
@@ -30,7 +30,7 @@ pub enum LineNum {
     BothSides { for_deleted: u64, for_added: u64 },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ByteRecordLineInfo {
     byte_record: csv::ByteRecord,
     line: u64,

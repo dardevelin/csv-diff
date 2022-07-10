@@ -8,7 +8,7 @@ use crate::diff_row::*;
 /// You can use [`DiffByteRecords.sort_by_line`](DiffByteRecords::sort_by_line) to sort them in-place.
 ///
 /// See the example on [`CsvByteDiff`](crate::csv_diff::CsvByteDiff) for general usage.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DiffByteRecords(pub(crate) Vec<DiffByteRecord>);
 
 impl DiffByteRecords {
