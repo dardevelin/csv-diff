@@ -85,9 +85,6 @@ where
         self.hash_task_spawner = Some(hash_task_spawner);
 
         receiver_diff_byte_record_iter.recv().unwrap()
-        // .recv()
-        // .unwrap()
-        // .map(|dbr| DiffByteRecords(dbr.collect()))
     }
 }
 
