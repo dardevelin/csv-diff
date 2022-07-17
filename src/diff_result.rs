@@ -1,18 +1,11 @@
 use crate::{
-    csv_parse_result::{
-        CsvByteRecordWithHash, CsvLeftRightParseResult, Position, RecordHash,
-        RecordHashWithPosition,
-    },
+    csv_parse_result::{CsvByteRecordWithHash, CsvLeftRightParseResult, Position, RecordHash},
     csv_parser_hasher::HashMapValue,
     diff_row::*,
 };
 use ahash::AHashMap as HashMap;
 use crossbeam_channel::{Receiver, Sender};
-use std::{
-    cmp::Ordering,
-    collections::hash_map::IntoIter,
-    io::{Read, Seek},
-};
+use std::{cmp::Ordering, collections::hash_map::IntoIter};
 
 /// Holds all information about the difference between two CSVs, after they have
 /// been compared with [`CsvByteDiffLocal.diff`](crate::csv_diff::CsvByteDiffLocal::diff).
