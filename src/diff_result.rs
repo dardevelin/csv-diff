@@ -1,4 +1,5 @@
 use crate::diff_row::*;
+use std::cmp::Ordering;
 
 /// Holds all information about the difference between two CSVs, after they have
 /// been compared with [`CsvByteDiff.diff`](crate::csv_diff::CsvByteDiff::diff).
@@ -18,20 +19,30 @@ impl DiffByteRecords {
     /// after the comparison (with regard to their line in the original CSV).
     pub fn sort_by_line(&mut self) {
         self.0.sort_by(|a, b| match (a.line_num(), b.line_num()) {
-            (LineNum::OneSide(line_num_a), LineNum::OneSide(line_num_b)) => {
-                line_num_a.cmp(&line_num_b)
-            }
+            (LineNum::OneSide(line_num_a), LineNum::OneSide(line_num_b)) => line_num_a
+                .cmp(&line_num_b)
+                .then(if matches!(a, DiffByteRecord::Delete(..)) {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }),
             (
                 LineNum::OneSide(line_num_a),
                 LineNum::BothSides {
                     for_deleted,
                     for_added,
                 },
-            ) => line_num_a.cmp(if for_deleted < for_added {
-                &for_deleted
-            } else {
-                &for_added
-            }),
+            ) => line_num_a
+                .cmp(if for_deleted < for_added {
+                    &for_deleted
+                } else {
+                    &for_added
+                })
+                .then(if matches!(a, DiffByteRecord::Delete(..)) {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }),
             (
                 LineNum::BothSides {
                     for_deleted,
@@ -43,7 +54,12 @@ impl DiffByteRecords {
             } else {
                 &for_added
             }
-            .cmp(&line_num_b),
+            .cmp(&line_num_b)
+            .then(if matches!(b, DiffByteRecord::Add(..)) {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }),
             (
                 LineNum::BothSides {
                     for_deleted: for_deleted_a,
