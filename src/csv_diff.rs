@@ -476,7 +476,7 @@ mod tests {
     use crate::diff_result::DiffByteRecords;
     use crate::diff_row::{ByteRecordLineInfo, DiffByteRecord};
     use pretty_assertions::assert_eq;
-    use std::{error::Error, io::Cursor};
+    use std::error::Error;
 
     fn csv_diff_local_with_sorting<T: CsvHashTaskSpawnerLocal>(
         csv_left: &str,
@@ -485,8 +485,8 @@ mod tests {
         csv_diff: CsvByteDiffLocal<T>,
     ) -> Result<(), Box<dyn Error>> {
         let mut diff_res_actual = csv_diff.diff(
-            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
-            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         )?;
 
         diff_res_actual.sort_by_line();
@@ -504,8 +504,8 @@ mod tests {
         csv_diff: CsvByteDiff<T>,
     ) -> Result<(), Box<dyn Error>> {
         let diff_iter = csv_diff.diff(
-            Csv::with_reader(Cursor::new(csv_left.as_bytes())),
-            Csv::with_reader(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader(csv_left.as_bytes()),
+            Csv::with_reader(csv_right.as_bytes()),
         );
 
         let mut actual = DiffByteRecords(diff_iter.collect());
@@ -543,10 +543,10 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(false)
                     .build(),
-                CsvBuilder::with_reader_seek(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -609,10 +609,10 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(false)
                     .build(),
-                CsvBuilder::with_reader_seek(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -635,10 +635,10 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(true)
                     .build(),
-                CsvBuilder::with_reader_seek(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -704,8 +704,8 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
-                CsvBuilder::with_reader_seek(Cursor::new(csv_right.as_bytes()))
+                Csv::with_reader_seek(csv_left.as_bytes()),
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -780,10 +780,10 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(true)
                     .build(),
-                CsvBuilder::with_reader_seek(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -834,10 +834,10 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(false)
                     .build(),
-                CsvBuilder::with_reader_seek(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(true)
                     .build(),
             )
@@ -1754,8 +1754,8 @@ mod tests {
                         a,b,d";
 
         let diff_res_actual = CsvByteDiffLocal::new()?.diff(
-            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
-            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         );
 
         let err_kind = diff_res_actual.map_err(|err| err.into_kind());
@@ -1788,8 +1788,8 @@ mod tests {
                         a,b,d";
 
         let diff_res_actual = CsvByteDiffLocal::new()?.diff(
-            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
-            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         );
 
         let err_kind = diff_res_actual.map_err(|err| err.into_kind());
@@ -1835,8 +1835,8 @@ mod tests {
         .primary_key_columns(vec![0, 1])
         .build()?
         .diff(
-            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
-            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         )
         .unwrap();
         let mut diff_res_expected = DiffByteRecords(vec![
