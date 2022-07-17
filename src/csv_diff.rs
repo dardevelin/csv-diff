@@ -20,6 +20,7 @@ use crate::diff_result::{DiffByteRecords, DiffByteRecordsIterator};
 use crate::thread_scope_strategy::*;
 use crossbeam_channel::Receiver;
 use csv::Reader;
+use std::cell::RefCell;
 use std::io::{Read, Seek};
 use std::marker::PhantomData;
 use std::{collections::HashSet, iter::Iterator};
@@ -28,7 +29,8 @@ use thiserror::Error;
 #[derive(Debug)]
 pub struct CsvByteDiff<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
-    hash_task_spawner: Option<T>,
+    // TODO: try to find a way to remove interior mutability in `diff` method
+    hash_task_spawner: RefCell<Option<T>>,
 }
 
 #[cfg(feature = "rayon-threads")]
@@ -36,9 +38,9 @@ impl CsvByteDiff<CsvHashTaskSpawnerRayon<'static>> {
     pub fn new() -> Result<Self, CsvDiffNewError> {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
-            hash_task_spawner: Some(CsvHashTaskSpawnerRayon::with_thread_pool_owned(
+            hash_task_spawner: RefCell::new(Some(CsvHashTaskSpawnerRayon::with_thread_pool_owned(
                 rayon::ThreadPoolBuilder::new().build()?,
-            )),
+            ))),
         };
         instance.primary_key_columns.insert(0);
         Ok(instance)
@@ -50,9 +52,7 @@ where
     T: CsvHashTaskSpawner,
 {
     pub fn diff<R: Read + Send + 'static>(
-        // TODO: it is unfortunate that we have to borrow as mutable;
-        // find a way to borrow immutable
-        &mut self,
+        &self,
         csv_left: Csv<R>,
         csv_right: Csv<R>,
     ) -> DiffByteRecordsIterator {
@@ -63,7 +63,7 @@ where
 
         let (sender_csv_recycle, receiver_csv_recycle) = unbounded();
 
-        let hts = self.hash_task_spawner.take();
+        let hts = self.hash_task_spawner.take().take();
 
         let (hash_task_spawner, receiver_diff_byte_record_iter) =
             // TODO: remove unwrap!!!
@@ -82,7 +82,8 @@ where
                 self.primary_key_columns.clone(),
             );
 
-        self.hash_task_spawner = Some(hash_task_spawner);
+        let mut hash_task_spawner_mut = self.hash_task_spawner.borrow_mut();
+        *hash_task_spawner_mut = Some(hash_task_spawner);
 
         receiver_diff_byte_record_iter.recv().unwrap()
     }
@@ -500,7 +501,7 @@ mod tests {
         csv_left: &'static str,
         csv_right: &'static str,
         mut expected: DiffByteRecords,
-        mut csv_diff: CsvByteDiff<T>,
+        csv_diff: CsvByteDiff<T>,
     ) -> Result<(), Box<dyn Error>> {
         let diff_iter = csv_diff.diff(
             Csv::with_reader(Cursor::new(csv_left.as_bytes())),
