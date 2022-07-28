@@ -77,10 +77,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                     if self.max_capacity_right_map > 0
                         && pos_left.line % self.max_capacity_right_map as u64 == 0
                     {
-                        // in order to circumvent borrowing issues in closure
-                        let mut csv_records_right_map =
-                            std::mem::take(&mut self.csv_records_right_map);
-                        csv_records_right_map.drain().for_each(|(k, v)| {
+                        for (k, v) in self.csv_records_right_map.drain() {
                             match v {
                                 HashMapValue::Equal(..) => {
                                     // nothing to do - will be removed
@@ -132,8 +129,8 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                     });
                                 }
                             }
-                        });
-                        self.csv_records_right_map = csv_records_right_map;
+                        }
+
                         std::mem::swap(
                             &mut self.intermediate_right_map,
                             &mut self.csv_records_right_map,
@@ -167,10 +164,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                     if self.max_capacity_left_map > 0
                         && pos_right.line % self.max_capacity_left_map as u64 == 0
                     {
-                        // in order to circumvent borrowing issues in closure
-                        let mut csv_records_left_map =
-                            std::mem::take(&mut self.csv_records_left_map);
-                        csv_records_left_map.drain().for_each(|(k, v)| {
+                        for (k, v) in self.csv_records_left_map.drain() {
                             match v {
                                 HashMapValue::Equal(..) => {
                                     // nothing to do - will be removed
@@ -222,8 +216,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                     });
                                 }
                             }
-                        });
-                        self.csv_records_left_map = csv_records_left_map;
+                        }
                         std::mem::swap(
                             &mut self.intermediate_left_map,
                             &mut self.csv_records_left_map,

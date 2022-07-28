@@ -243,10 +243,7 @@ impl Iterator for DiffByteRecordsIterator {
                     if self.max_capacity_right_map > 0
                         && byte_record_left_line % self.max_capacity_right_map as u64 == 0
                     {
-                        // in order to circumvent borrowing issues in closure
-                        let mut csv_records_right_map =
-                            std::mem::take(&mut self.csv_records_right_map);
-                        for (k, v) in csv_records_right_map.drain() {
+                        for (k, v) in self.csv_records_right_map.drain() {
                             match v {
                                 HashMapValue::Equal(byte_record_left, byte_record_right) => {
                                     // can be recycled, so we send it upstream;
@@ -298,7 +295,6 @@ impl Iterator for DiffByteRecordsIterator {
                                 }
                             }
                         }
-                        self.csv_records_right_map = csv_records_right_map;
                         std::mem::swap(
                             &mut self.intermediate_right_map,
                             &mut self.csv_records_right_map,
@@ -345,10 +341,7 @@ impl Iterator for DiffByteRecordsIterator {
                     if self.max_capacity_left_map > 0
                         && byte_record_right_line % self.max_capacity_left_map as u64 == 0
                     {
-                        // in order to circumvent borrowing issues in closure
-                        let mut csv_records_left_map =
-                            std::mem::take(&mut self.csv_records_left_map);
-                        for (k, v) in csv_records_left_map.drain() {
+                        for (k, v) in self.csv_records_left_map.drain() {
                             match v {
                                 HashMapValue::Equal(byte_record_left, byte_record_right) => {
                                     // can be recycled, so we send it upstream;
@@ -398,7 +391,6 @@ impl Iterator for DiffByteRecordsIterator {
                                 }
                             }
                         }
-                        self.csv_records_left_map = csv_records_left_map;
                         std::mem::swap(
                             &mut self.intermediate_left_map,
                             &mut self.csv_records_left_map,
