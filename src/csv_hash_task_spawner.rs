@@ -212,14 +212,14 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalRayon<'_> {
         R: Read + Seek + Send,
     {
         self.thread_scoper.scope(move |s| {
-            s.spawn(move |ss| {
-                ss.spawn(move |_s1| {
+            s.spawn(move |inner_scope| {
+                inner_scope.spawn(move |_s1| {
                     Self::parse_hash_and_send_for_compare::<
                         R,
                         CsvParseResultLeft<RecordHashWithPosition>,
                     >(csv_hash_task_senders_left, primary_key_columns);
                 });
-                ss.spawn(move |_s2| {
+                inner_scope.spawn(move |_s2| {
                     Self::parse_hash_and_send_for_compare::<
                         R,
                         CsvParseResultRight<RecordHashWithPosition>,
@@ -254,14 +254,14 @@ impl CsvHashTaskSpawnerLocal for CsvHashTaskSpawnerLocalCrossbeam {
         R: Read + Seek + Send,
     {
         self.thread_scoper.scope(move |s| {
-            s.spawn(move |ss| {
-                ss.spawn(move |_s1| {
+            s.spawn(move |inner_scope| {
+                inner_scope.spawn(move |_s1| {
                     Self::parse_hash_and_send_for_compare::<
                         R,
                         CsvParseResultLeft<RecordHashWithPosition>,
                     >(csv_hash_task_senders_left, primary_key_columns);
                 });
-                ss.spawn(move |_s2| {
+                inner_scope.spawn(move |_s2| {
                     Self::parse_hash_and_send_for_compare::<
                         R,
                         CsvParseResultRight<RecordHashWithPosition>,
