@@ -4,7 +4,7 @@ use crate::csv_hash_receiver_comparer::CsvHashReceiverStreamComparer;
 #[cfg(feature = "rayon-threads")]
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerRayon;
 use crate::csv_hash_task_spawner::{
-    CsvHashTaskLineSenders, CsvHashTaskSendersWithRecycleReceiver, CsvHashTaskSpawner,
+    CsvHashTaskLineSenders, CsvHashTaskSenderWithRecycleReceiver, CsvHashTaskSpawner,
     CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder,
 };
 #[cfg(feature = "crossbeam-threads")]
@@ -68,12 +68,12 @@ where
         let (hash_task_spawner, receiver_diff_byte_record_iter) =
             // TODO: remove unwrap!!!
             hts.unwrap().spawn_hashing_tasks_and_send_result(
-                CsvHashTaskSendersWithRecycleReceiver::new(
+                CsvHashTaskSenderWithRecycleReceiver::new(
                     sender_left,
                     csv_left,
                     receiver_csv_recycle.clone()
                 ),
-                CsvHashTaskSendersWithRecycleReceiver::new(
+                CsvHashTaskSenderWithRecycleReceiver::new(
                     sender_right,
                     csv_right,
                     receiver_csv_recycle

@@ -234,7 +234,7 @@ mod integration_test {
         use crossbeam_channel::{unbounded, Receiver};
         use csv_diff::{
             csv_hash_task_spawner::{
-                CsvHashTaskLineSenders, CsvHashTaskSendersWithRecycleReceiver,
+                CsvHashTaskLineSenders, CsvHashTaskSenderWithRecycleReceiver,
                 CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder,
             },
             csv_parse_result::{CsvParseResultLeft, CsvParseResultRight, RecordHashWithPosition},
