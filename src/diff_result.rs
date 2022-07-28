@@ -171,7 +171,7 @@ pub struct DiffByteRecordsIterator {
     intermediate_right_map: CsvByteRecordValueMap,
     max_capacity_left_map: usize,
     max_capacity_right_map: usize,
-    sender_csv_records_rcycl: Sender<csv::ByteRecord>,
+    sender_csv_records_recycle: Sender<csv::ByteRecord>,
 }
 
 impl DiffByteRecordsIterator {
@@ -179,7 +179,7 @@ impl DiffByteRecordsIterator {
         csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
         left_capacity: usize,
         right_capacity: usize,
-        sender_csv_records_rcycl: Sender<csv::ByteRecord>,
+        sender_csv_records_recycle: Sender<csv::ByteRecord>,
     ) -> Self {
         Self {
             buf: Default::default(),
@@ -192,7 +192,7 @@ impl DiffByteRecordsIterator {
             intermediate_right_map: HashMap::new(),
             max_capacity_left_map: left_capacity,
             max_capacity_right_map: right_capacity,
-            sender_csv_records_rcycl,
+            sender_csv_records_recycle,
         }
     }
 }
@@ -253,8 +253,8 @@ impl Iterator for DiffByteRecordsIterator {
                                     // if receiver is already gone, we ignore the error that occurs when sending,
                                     // which only leads to the byte record not being recycled (it can't be recycled,
                                     // because upstream has finished it's work)
-                                    let _ = self.sender_csv_records_rcycl.send(byte_record_left);
-                                    let _ = self.sender_csv_records_rcycl.send(byte_record_right);
+                                    let _ = self.sender_csv_records_recycle.send(byte_record_left);
+                                    let _ = self.sender_csv_records_recycle.send(byte_record_right);
                                 }
                                 HashMapValue::Initial(_hash, ref _byte_record) => {
                                     // put it back, because we don't know what to do with this value yet
@@ -355,8 +355,8 @@ impl Iterator for DiffByteRecordsIterator {
                                     // if receiver is already gone, we ignore the error that occurs when sending,
                                     // which only leads to the byte record not being recycled (it can't be recycled,
                                     // because upstream has finished it's work)
-                                    let _ = self.sender_csv_records_rcycl.send(byte_record_left);
-                                    let _ = self.sender_csv_records_rcycl.send(byte_record_right);
+                                    let _ = self.sender_csv_records_recycle.send(byte_record_left);
+                                    let _ = self.sender_csv_records_recycle.send(byte_record_right);
                                 }
                                 HashMapValue::Initial(_hash, ref _byte_record) => {
                                     // put it back, because we don't know what to do with this value yet
