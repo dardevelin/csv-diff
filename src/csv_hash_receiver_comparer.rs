@@ -1,10 +1,8 @@
 use crate::{
-    csv_parse_result::{CsvByteRecordWithHash, CsvLeftRightParseResult, RecordHashWithPosition},
+    csv_parse_result::{CsvByteRecordWithHash, CsvLeftRightParseResult},
     diff_result::DiffByteRecordsIterator,
 };
 use crossbeam_channel::{Receiver, Sender};
-use csv::Reader;
-use std::io::{Read, Seek};
 
 pub struct CsvHashReceiverStreamComparer {
     receiver: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
