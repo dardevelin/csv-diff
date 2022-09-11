@@ -6,6 +6,7 @@ use std::io::{Read, Seek};
 use xxhash_rust::xxh3::{xxh3_128, Xxh3};
 
 use crate::csv::Csv;
+use crate::csv_hasher::CsvHasherExt;
 use crate::csv_parse_result::{
     CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight, Position,
     RecordHash,
@@ -67,33 +68,28 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
         let mut csv_record = csv::ByteRecord::new();
         // read first record in order to get the number of fields
         if csv_reader.read_byte_record(&mut csv_record)? {
-            let csv_record_right_first = std::mem::take(&mut csv_record);
-            let fields_as_key: Vec<_> = primary_key_columns.iter().collect();
+            let csv_record_first = std::mem::take(&mut csv_record);
+            let fields_as_key: Vec<_> = primary_key_columns.iter().copied().collect();
             // TODO: maybe use this in order to only hash fields that are values and not act
             // as primary keys. We should probably only do this, if primary key field indices are
             // contiguous, because otherwise we will have multiple calls to our hashing function,
             // which could hurt performance.
-            // let num_of_fields = csv_record_right_first.len();
+            // let num_of_fields = csv_record_first.len();
             // let fields_as_value: Vec<_> = (0..num_of_fields)
             //     .filter(|x| !primary_key_columns.contains(x))
             //     .collect();
 
             let mut records_buff: StackVec<CsvLeftRightParseResult> = smallvec::SmallVec::new();
 
-            let mut hasher = Xxh3::new();
-            let record = csv_record_right_first;
+            let record = csv_record_first;
             let key_fields: Vec<_> = fields_as_key
                 .iter()
-                .filter_map(|k_idx| record.get(**k_idx))
+                .filter_map(|k_idx| record.get(*k_idx))
                 .collect();
             if !key_fields.is_empty() {
-                // TODO: try to do it with as few calls to `write` as possible (see below)
-                for key_field in key_fields {
-                    hasher.write(key_field);
-                }
-                let key = hasher.digest128();
+                let key = record.hash_key_fields(fields_as_key.as_slice());
                 // TODO: don't hash all of it -> exclude the key fields (see below)
-                let hash_record = xxh3_128(record.as_slice());
+                let hash_record = record.hash_record();
                 let pos = record.position().expect("a record position");
                 records_buff.push(
                     T::new(RecordHash::new(
@@ -105,19 +101,8 @@ impl CsvParserHasherSender<CsvLeftRightParseResult> {
                 );
                 let mut line = 2;
                 while csv_reader.read_byte_record(&mut csv_record)? {
-                    hasher.reset();
-                    let key_fields = fields_as_key
-                        .iter()
-                        .filter_map(|k_idx| csv_record.get(**k_idx));
-                    // TODO: try to do it with as few calls to `write` as possible (see below)
-                    for key_field in key_fields {
-                        hasher.write(key_field);
-                    }
-                    let key = hasher.digest128();
-                    // TODO: don't hash all of it -> exclude the key fields
-                    // in order to still be efficient and do as few `write` calls as possible
-                    // consider using `csv_record.range(...)` method
-                    let hash_record = xxh3_128(csv_record.as_slice());
+                    let key = csv_record.hash_key_fields(fields_as_key.as_slice());
+                    let hash_record = csv_record.hash_record();
                     {
                         let pos = csv_record.position().expect("a record position");
                         records_buff.push(

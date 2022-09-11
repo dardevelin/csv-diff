@@ -26,6 +26,7 @@ pub mod csv;
 pub mod csv_diff;
 mod csv_hash_comparer;
 pub mod csv_hash_task_spawner;
+mod csv_hasher;
 pub mod csv_parse_result;
 mod csv_parser_hasher;
 pub mod diff_result;
