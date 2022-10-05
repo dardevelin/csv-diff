@@ -1,4 +1,4 @@
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use csv::Reader;
 use std::collections::HashSet;
 use std::hash::Hasher;
@@ -224,23 +224,20 @@ impl CsvParserHasherSender<CsvLeftRightParseResult<CsvByteRecordWithHash>> {
 }
 
 pub(crate) struct CsvParserHasherWithLineHintSender {
-    sender_first_few_with_num_line_hint:
-        Sender<CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>>,
+    sender_first_few: Sender<CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>>,
     sender_remaining_csv_hash:
         CsvParserHasherSender<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
 }
 
 impl CsvParserHasherWithLineHintSender {
     pub(crate) fn new(
-        sender_first_few_with_num_line_hint: Sender<
-            CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>,
-        >,
+        sender_first_few: Sender<CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>>,
         sender_remaining_csv_hash: CsvParserHasherSender<
             CsvLeftRightParseResult<CsvByteRecordWithHash>,
         >,
     ) -> Self {
         Self {
-            sender_first_few_with_num_line_hint,
+            sender_first_few,
             sender_remaining_csv_hash,
         }
     }
@@ -259,11 +256,20 @@ impl CsvParserHasherWithLineHintSender {
         primary_key_columns: &HashSet<usize>,
         receiver_csv_recycle: Receiver<csv::ByteRecord>,
     ) -> csv::Result<()> {
-        self.sender_first_few_with_num_line_hint
+        self.sender_first_few
             .send(
                 T1::new(CsvByteRecordWithHashFirstFewLines::new(first_few_records)).into_payload(),
             )
             .expect("send the first few lines");
+
+        // We need to drop this sender here, so that the receiver side is not blocked waiting on this sender
+        // to be eventually dropped. Otherwise, this leads to a deadlock when we reach the max capacity of
+        // the channel for the remaining csv lines. This is because neither channel can make progress:
+        // - receiver side of "first few" channel is waiting to `collect`, but can't until sender is dropped
+        // - receiver side of "remaining" channel is full and doesn't get emptied, because it is blocked
+        //   by the "first few" channel
+        let (sender_tmp, _rcv) = unbounded();
+        let _ = std::mem::replace(&mut self.sender_first_few, sender_tmp);
 
         self.sender_remaining_csv_hash.parse_and_hash::<R, T2>(
             csv_remaining,
