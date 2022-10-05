@@ -70,16 +70,16 @@ where
         let (hash_task_spawner, receiver_diff_byte_record_iter) =
             // TODO: remove unwrap!!!
             hts.unwrap().spawn_hashing_tasks_and_send_result(
+                csv_left,
                 CsvHashTaskSenderWithRecycleReceiver::new(
                     sender_left,
                     sender_left_first_few_lines,
-                    csv_left,
                     receiver_csv_recycle.clone()
                 ),
+                csv_right,
                 CsvHashTaskSenderWithRecycleReceiver::new(
                     sender_right,
                     sender_right_first_few_lines,
-                    csv_right,
                     receiver_csv_recycle
                 ),
                 CsvHashReceiverStreamComparer::new(receiver, receiver_first_few_lines, sender_csv_recycle),

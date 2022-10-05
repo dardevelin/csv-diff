@@ -6,7 +6,7 @@ use std::io::{Read, Seek};
 use std::time::Duration;
 use xxhash_rust::xxh3::{xxh3_128, Xxh3};
 
-use crate::csv::Csv;
+use crate::csv::{Csv, CsvFirstFew, CsvRemaining};
 use crate::csv_hasher::CsvHasherExt;
 use crate::csv_parse_result::{
     CsvByteRecordWithHash, CsvByteRecordWithHashFirstFewLines, CsvLeftRightParseResult,
@@ -139,11 +139,11 @@ impl CsvParserHasherSender<CsvLeftRightParseResult<CsvByteRecordWithHash>> {
         T: CsvParseResult<CsvLeftRightParseResult<CsvByteRecordWithHash>, CsvByteRecordWithHash>,
     >(
         &mut self,
-        csv: Csv<R>,
+        csv_remaining: CsvRemaining<R>,
         primary_key_columns: &HashSet<usize>,
         receiver_csv_recycle: Receiver<csv::ByteRecord>,
     ) -> csv::Result<()> {
-        let mut csv_reader: Reader<R> = csv.into();
+        let mut csv_reader: Reader<R> = csv_remaining.into();
         let mut csv_record = csv::ByteRecord::new();
         // read first record in order to get the number of fields
         if csv_reader.read_byte_record(&mut csv_record)? {
@@ -254,21 +254,19 @@ impl CsvParserHasherWithLineHintSender {
         T2: CsvParseResult<CsvLeftRightParseResult<CsvByteRecordWithHash>, CsvByteRecordWithHash>,
     >(
         &mut self,
-        mut csv: Csv<R>,
+        first_few_records: Vec<CsvByteRecordWithHash>,
+        csv_remaining: CsvRemaining<R>,
         primary_key_columns: &HashSet<usize>,
         receiver_csv_recycle: Receiver<csv::ByteRecord>,
     ) -> csv::Result<()> {
         self.sender_first_few_with_num_line_hint
             .send(
-                T1::new(CsvByteRecordWithHashFirstFewLines::new(std::mem::take(
-                    &mut csv.first_few_records,
-                )))
-                .into_payload(),
+                T1::new(CsvByteRecordWithHashFirstFewLines::new(first_few_records)).into_payload(),
             )
             .expect("send the first few lines");
 
         self.sender_remaining_csv_hash.parse_and_hash::<R, T2>(
-            csv,
+            csv_remaining,
             primary_key_columns,
             receiver_csv_recycle,
         )
