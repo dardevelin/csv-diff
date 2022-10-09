@@ -8,12 +8,7 @@ use crate::{
 };
 use ahash::AHashMap as HashMap;
 use crossbeam_channel::{Receiver, Sender};
-use std::{
-    cmp::{max, Ordering},
-    collections::hash_map::IntoIter,
-    convert::TryInto,
-    iter::Chain,
-};
+use std::{cmp::Ordering, collections::hash_map::IntoIter, convert::TryInto, iter::Chain};
 
 /// Holds all information about the difference between two CSVs, after they have
 /// been compared with [`CsvByteDiffLocal.diff`](crate::csv_diff::CsvByteDiffLocal::diff).
@@ -180,19 +175,6 @@ impl MaxCapacityThreshold {
             Self::Static(x) | Self::Dynamic(x) => *x,
         }
     }
-    #[inline]
-    fn calc_new_inner_if_dynamic(&mut self, current_line: u64) {
-        if let Self::Dynamic(th) = self {
-            if current_line % 100 == 0 {
-                *th = max(
-                    10,
-                    (current_line / 100)
-                        .try_into()
-                        .unwrap_or(usize::max_value()),
-                );
-            }
-        }
-    }
 }
 
 pub struct DiffByteRecordsIterator {
@@ -234,8 +216,8 @@ impl DiffByteRecordsIterator {
             csv_records_right_map_iter: None,
             intermediate_left_map: HashMap::new(),
             intermediate_right_map: HashMap::new(),
-            max_capacity_left_map: MaxCapacityThreshold::Dynamic(10), // TODO: update this during `next()`
-            max_capacity_right_map: MaxCapacityThreshold::Dynamic(10), // TODO: update this during `next()`
+            max_capacity_left_map: MaxCapacityThreshold::Dynamic(1), // TODO: update this during `next()`
+            max_capacity_right_map: MaxCapacityThreshold::Dynamic(1), // TODO: update this during `next()`
             sender_csv_records_recycle,
             chained_received_values: None,
         }
@@ -331,8 +313,6 @@ impl Iterator for DiffByteRecordsIterator {
                     if max_capa_right_map > 0
                         && byte_record_left_line % max_capa_right_map as u64 == 0
                     {
-                        self.max_capacity_right_map
-                            .calc_new_inner_if_dynamic(byte_record_left_line);
                         for (k, v) in self.csv_records_right_map.drain() {
                             match v {
                                 HashMapValue::Equal(byte_record_left, byte_record_right) => {
@@ -432,8 +412,6 @@ impl Iterator for DiffByteRecordsIterator {
                     if max_capa_left_map > 0
                         && byte_record_right_line % max_capa_left_map as u64 == 0
                     {
-                        self.max_capacity_left_map
-                            .calc_new_inner_if_dynamic(byte_record_right_line);
                         for (k, v) in self.csv_records_left_map.drain() {
                             match v {
                                 HashMapValue::Equal(byte_record_left, byte_record_right) => {
