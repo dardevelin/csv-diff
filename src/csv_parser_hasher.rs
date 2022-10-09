@@ -9,9 +9,8 @@ use xxhash_rust::xxh3::{xxh3_128, Xxh3};
 use crate::csv::Csv;
 use crate::csv_hasher::CsvHasherExt;
 use crate::csv_parse_result::{
-    CsvByteRecordWithHash, CsvByteRecordWithHashFirstFewLines, CsvLeftRightParseResult,
-    CsvParseResult, CsvParseResultLeft, CsvParseResultRight, Position, RecordHash,
-    RecordHashWithPosition,
+    CsvByteRecordWithHash, CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft,
+    CsvParseResultRight, Position, RecordHash, RecordHashWithPosition,
 };
 
 impl<R> CsvParseResult<CsvLeftRightParseResult<R>, R> for CsvParseResultLeft<R> {
@@ -220,58 +219,6 @@ impl CsvParserHasherSender<CsvLeftRightParseResult<CsvByteRecordWithHash>> {
             }
         }
         Ok(())
-    }
-}
-
-pub(crate) struct CsvParserHasherWithLineHintSender {
-    sender_first_few_with_num_line_hint:
-        Sender<CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>>,
-    sender_remaining_csv_hash:
-        CsvParserHasherSender<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
-}
-
-impl CsvParserHasherWithLineHintSender {
-    pub(crate) fn new(
-        sender_first_few_with_num_line_hint: Sender<
-            CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>,
-        >,
-        sender_remaining_csv_hash: CsvParserHasherSender<
-            CsvLeftRightParseResult<CsvByteRecordWithHash>,
-        >,
-    ) -> Self {
-        Self {
-            sender_first_few_with_num_line_hint,
-            sender_remaining_csv_hash,
-        }
-    }
-
-    pub(crate) fn parse_and_hash<
-        R: Read + Send,
-        T1: CsvParseResult<
-            CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>,
-            CsvByteRecordWithHashFirstFewLines,
-        >,
-        T2: CsvParseResult<CsvLeftRightParseResult<CsvByteRecordWithHash>, CsvByteRecordWithHash>,
-    >(
-        &mut self,
-        mut csv: Csv<R>,
-        primary_key_columns: &HashSet<usize>,
-        receiver_csv_recycle: Receiver<csv::ByteRecord>,
-    ) -> csv::Result<()> {
-        self.sender_first_few_with_num_line_hint
-            .send(
-                T1::new(CsvByteRecordWithHashFirstFewLines::new(std::mem::take(
-                    &mut csv.first_few_records,
-                )))
-                .into_payload(),
-            )
-            .expect("send the first few lines");
-
-        self.sender_remaining_csv_hash.parse_and_hash::<R, T2>(
-            csv,
-            primary_key_columns,
-            receiver_csv_recycle,
-        )
     }
 }
 

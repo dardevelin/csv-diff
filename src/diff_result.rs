@@ -1,14 +1,11 @@
 use crate::{
-    csv_parse_result::{
-        CsvByteRecordWithHash, CsvByteRecordWithHashFirstFewLines, CsvLeftRightParseResult,
-        Position, RecordHash,
-    },
+    csv_parse_result::{CsvByteRecordWithHash, CsvLeftRightParseResult, Position, RecordHash},
     csv_parser_hasher::HashMapValue,
     diff_row::*,
 };
 use ahash::AHashMap as HashMap;
 use crossbeam_channel::{Receiver, Sender};
-use std::{cmp::Ordering, collections::hash_map::IntoIter, convert::TryInto, iter::Chain};
+use std::{cmp::Ordering, collections::hash_map::IntoIter};
 
 /// Holds all information about the difference between two CSVs, after they have
 /// been compared with [`CsvByteDiffLocal.diff`](crate::csv_diff::CsvByteDiffLocal::diff).
@@ -163,82 +160,39 @@ impl Iterator for DiffByteRecordsIntoIterator {
 pub(crate) type CsvHashValueMap = HashMap<u128, HashMapValue<Position, RecordHash>>;
 pub(crate) type CsvByteRecordValueMap = HashMap<u128, HashMapValue<csv::ByteRecord>>;
 
-enum MaxCapacityThreshold {
-    Static(usize),
-    Dynamic(usize),
-}
-
-impl MaxCapacityThreshold {
-    #[inline]
-    fn inner(&self) -> usize {
-        match self {
-            Self::Static(x) | Self::Dynamic(x) => *x,
-        }
-    }
-}
-
 pub struct DiffByteRecordsIterator {
     buf: Vec<DiffByteRecord>,
     csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
-    receiver_first_few_lines: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>>,
     csv_records_left_map: CsvByteRecordValueMap,
     csv_records_left_map_iter: Option<IntoIter<u128, HashMapValue<csv::ByteRecord>>>,
     csv_records_right_map: CsvByteRecordValueMap,
     csv_records_right_map_iter: Option<IntoIter<u128, HashMapValue<csv::ByteRecord>>>,
     intermediate_left_map: CsvByteRecordValueMap,
     intermediate_right_map: CsvByteRecordValueMap,
-    max_capacity_left_map: MaxCapacityThreshold,
-    max_capacity_right_map: MaxCapacityThreshold,
+    max_capacity_left_map: usize,
+    max_capacity_right_map: usize,
     sender_csv_records_recycle: Sender<csv::ByteRecord>,
-    chained_received_values: Option<
-        Chain<
-            std::vec::IntoIter<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
-            crossbeam_channel::IntoIter<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
-        >,
-    >,
 }
 
 impl DiffByteRecordsIterator {
     pub(crate) fn new(
         csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
-        receiver_first_few_lines: Receiver<
-            CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>,
-        >,
+        left_capacity: usize,
+        right_capacity: usize,
         sender_csv_records_recycle: Sender<csv::ByteRecord>,
     ) -> Self {
         Self {
             buf: Default::default(),
             csv_left_right_parse_results,
-            receiver_first_few_lines,
-            csv_records_left_map: HashMap::new(),
+            csv_records_left_map: HashMap::with_capacity(left_capacity),
             csv_records_left_map_iter: None,
-            csv_records_right_map: HashMap::new(),
+            csv_records_right_map: HashMap::with_capacity(right_capacity),
             csv_records_right_map_iter: None,
             intermediate_left_map: HashMap::new(),
             intermediate_right_map: HashMap::new(),
-            max_capacity_left_map: MaxCapacityThreshold::Dynamic(1), // TODO: update this during `next()`
-            max_capacity_right_map: MaxCapacityThreshold::Dynamic(1), // TODO: update this during `next()`
+            max_capacity_left_map: left_capacity,
+            max_capacity_right_map: right_capacity,
             sender_csv_records_recycle,
-            chained_received_values: None,
-        }
-    }
-
-    pub(crate) fn num_of_lines_hint(
-        &mut self,
-        left_num_lines_hint: Option<u64>,
-        right_num_lines_hint: Option<u64>,
-    ) {
-        // it turns out that dividing num of lines by 100 is optimal for the threshold capacity of the hash maps
-        // with regard to performance, when every line is equal
-        if let Some(capa) = left_num_lines_hint
-            .map(|num_lines| (num_lines / 100).try_into().unwrap_or(usize::max_value()))
-        {
-            self.max_capacity_left_map = MaxCapacityThreshold::Static(capa);
-        }
-        if let Some(capa) = right_num_lines_hint
-            .map(|num_lines| (num_lines / 100).try_into().unwrap_or(usize::max_value()))
-        {
-            self.max_capacity_right_map = MaxCapacityThreshold::Static(capa);
         }
     }
 }
@@ -250,30 +204,7 @@ impl Iterator for DiffByteRecordsIterator {
         if !self.buf.is_empty() {
             return self.buf.pop();
         }
-
-        // we need a mutable iter here, otherwise we would loose data, when we break out of the loop below
-        let iter_chained_csv_left_right_parse_result = match self.chained_received_values.as_mut() {
-            None => {
-                let receiver_first_few_lines = self.receiver_first_few_lines.clone();
-                let csv_left_right_parse_results = self.csv_left_right_parse_results.clone();
-
-                self.chained_received_values.insert(
-                    receiver_first_few_lines
-                        .iter()
-                        .flat_map(|parse_res| {
-                            parse_res.map(|first_few| first_few.records).transpose()
-                        })
-                        // not as bad as it seems, because these are only the first few lines;
-                        // otherwise our type gets pretty complicated
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .chain(csv_left_right_parse_results.into_iter()),
-                )
-            }
-            Some(iter) => iter,
-        };
-
-        for csv_left_right_parse_result in iter_chained_csv_left_right_parse_result {
+        while let Ok(csv_left_right_parse_result) = self.csv_left_right_parse_results.recv() {
             match csv_left_right_parse_result {
                 CsvLeftRightParseResult::Left(left_record_res) => {
                     let record_hash_left = left_record_res.record_hash;
@@ -309,9 +240,8 @@ impl Iterator for DiffByteRecordsIterator {
                             );
                         }
                     }
-                    let max_capa_right_map = self.max_capacity_right_map.inner();
-                    if max_capa_right_map > 0
-                        && byte_record_left_line % max_capa_right_map as u64 == 0
+                    if self.max_capacity_right_map > 0
+                        && byte_record_left_line % self.max_capacity_right_map as u64 == 0
                     {
                         for (k, v) in self.csv_records_right_map.drain() {
                             match v {
@@ -408,9 +338,8 @@ impl Iterator for DiffByteRecordsIterator {
                             );
                         }
                     }
-                    let max_capa_left_map = self.max_capacity_left_map.inner();
-                    if max_capa_left_map > 0
-                        && byte_record_right_line % max_capa_left_map as u64 == 0
+                    if self.max_capacity_left_map > 0
+                        && byte_record_right_line % self.max_capacity_left_map as u64 == 0
                     {
                         for (k, v) in self.csv_records_left_map.drain() {
                             match v {
@@ -473,6 +402,7 @@ impl Iterator for DiffByteRecordsIterator {
                 }
             }
         }
+
         if !self.buf.is_empty() {
             return self.buf.pop();
         }

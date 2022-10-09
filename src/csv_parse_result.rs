@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 pub trait CsvParseResult<P, T> {
     fn new(payload_inner: T) -> Self;
     fn into_payload(self) -> P;
@@ -12,44 +11,10 @@ pub struct CsvParseResultRight<R> {
     pub(crate) csv_left_right_parse_result: CsvLeftRightParseResult<R>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum CsvLeftRightParseResult<R> {
     Left(R),
     Right(R),
-}
-
-impl<R> CsvLeftRightParseResult<R>
-where
-    R: Debug,
-{
-    pub(crate) fn map<F, U>(self, f: F) -> CsvLeftRightParseResult<U>
-    where
-        F: FnOnce(R) -> U,
-    {
-        match self {
-            Self::Left(inner) => CsvLeftRightParseResult::Left(f(inner)),
-            Self::Right(inner) => CsvLeftRightParseResult::Right(f(inner)),
-        }
-    }
-
-    pub(crate) fn transpose<U>(self) -> Box<dyn Iterator<Item = CsvLeftRightParseResult<U>>>
-    where
-        R: IntoIterator<Item = U>,
-        <R as IntoIterator>::IntoIter: 'static,
-    {
-        match self {
-            Self::Left(inner) => Box::new(
-                inner
-                    .into_iter()
-                    .map(|elem| CsvLeftRightParseResult::Left(elem)),
-            ),
-            Self::Right(inner) => Box::new(
-                inner
-                    .into_iter()
-                    .map(|elem| CsvLeftRightParseResult::Right(elem)),
-            ),
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -89,7 +54,6 @@ impl RecordHashWithPosition {
     }
 }
 
-#[derive(Clone, Debug)]
 pub struct CsvByteRecordWithHash {
     pub(crate) byte_record: csv::ByteRecord,
     pub(crate) record_hash: RecordHash,
@@ -101,24 +65,6 @@ impl CsvByteRecordWithHash {
         Self {
             byte_record,
             record_hash,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct CsvByteRecordWithHashFirstFewLines {
-    pub(crate) records: Vec<CsvByteRecordWithHash>,
-    //num_of_lines_hint: u64,
-}
-
-impl CsvByteRecordWithHashFirstFewLines {
-    pub(crate) fn new(
-        records: impl IntoIterator<Item = CsvByteRecordWithHash>,
-        //num_of_lines_hint: u64,
-    ) -> Self {
-        Self {
-            records: records.into_iter().collect(),
-            //num_of_lines_hint,
         }
     }
 }

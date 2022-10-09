@@ -60,8 +60,6 @@ where
 
         let (sender_right, receiver) = bounded(10_000);
         let sender_left = sender_right.clone();
-        let (sender_right_first_few_lines, receiver_first_few_lines) = bounded(1);
-        let sender_left_first_few_lines = sender_right_first_few_lines.clone();
 
         let (sender_csv_recycle, receiver_csv_recycle) = unbounded();
 
@@ -72,17 +70,15 @@ where
             hts.unwrap().spawn_hashing_tasks_and_send_result(
                 CsvHashTaskSenderWithRecycleReceiver::new(
                     sender_left,
-                    sender_left_first_few_lines,
                     csv_left,
                     receiver_csv_recycle.clone()
                 ),
                 CsvHashTaskSenderWithRecycleReceiver::new(
                     sender_right,
-                    sender_right_first_few_lines,
                     csv_right,
                     receiver_csv_recycle
                 ),
-                CsvHashReceiverStreamComparer::new(receiver, receiver_first_few_lines, sender_csv_recycle),
+                CsvHashReceiverStreamComparer::new(receiver, sender_csv_recycle),
                 self.primary_key_columns.clone(),
             );
 

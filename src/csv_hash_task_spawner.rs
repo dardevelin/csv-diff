@@ -3,11 +3,14 @@ use std::{
     io::{Read, Seek},
 };
 
-use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use csv::{Error, Reader};
 #[cfg(feature = "rayon-threads")]
 use mown::Mown;
 
+use crate::csv_parse_result::{
+    CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight,
+};
 #[cfg(feature = "crossbeam-threads")]
 use crate::thread_scope_strategy::CrossbeamScope;
 #[cfg(feature = "rayon-threads")]
@@ -20,17 +23,9 @@ use crate::{
     diff_result::{DiffByteRecords, DiffByteRecordsIterator},
     thread_scope_strategy::ThreadScoper,
 };
-use crate::{
-    csv_parse_result::{
-        CsvByteRecordWithHashFirstFewLines, CsvLeftRightParseResult, CsvParseResult,
-        CsvParseResultLeft, CsvParseResultRight,
-    },
-    csv_parser_hasher::CsvParserHasherWithLineHintSender,
-};
 
 pub struct CsvHashTaskSenderWithRecycleReceiver<R: Read> {
     sender: Sender<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
-    sender_first_few_lines: Sender<CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>>,
     csv: Csv<R>,
     receiver_recycle_csv: Receiver<csv::ByteRecord>,
 }
@@ -38,13 +33,11 @@ pub struct CsvHashTaskSenderWithRecycleReceiver<R: Read> {
 impl<R: Read> CsvHashTaskSenderWithRecycleReceiver<R> {
     pub(crate) fn new(
         sender: Sender<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
-        sender_first_few_lines: Sender<CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>>,
         csv: Csv<R>,
         receiver_recycle_csv: Receiver<csv::ByteRecord>,
     ) -> Self {
         Self {
             sender,
-            sender_first_few_lines,
             csv,
             receiver_recycle_csv,
         }
@@ -87,35 +80,22 @@ pub trait CsvHashTaskSpawner {
         // maybe we can do it differently
         Self: Sized;
 
-    fn parse_hash_and_send_for_compare<R, P1, P2>(
+    fn parse_hash_and_send_for_compare<R, P>(
         csv_hash_task_sender: CsvHashTaskSenderWithRecycleReceiver<R>,
         primary_key_columns: HashSet<usize>,
     ) -> csv::Result<()>
     where
         R: Read + Send,
-        P1: CsvParseResult<
-            CsvLeftRightParseResult<CsvByteRecordWithHashFirstFewLines>,
-            CsvByteRecordWithHashFirstFewLines,
-        >,
-        P2: CsvParseResult<CsvLeftRightParseResult<CsvByteRecordWithHash>, CsvByteRecordWithHash>,
+        P: CsvParseResult<CsvLeftRightParseResult<CsvByteRecordWithHash>, CsvByteRecordWithHash>,
     {
-        let mut hasher_with_line_hint_sender = CsvParserHasherWithLineHintSender::new(
-            csv_hash_task_sender.sender_first_few_lines,
-            CsvParserHasherSender::new(csv_hash_task_sender.sender),
-        );
-        hasher_with_line_hint_sender.parse_and_hash::<R, P1, P2>(
+        let mut csv_parser_hasher: CsvParserHasherSender<
+            CsvLeftRightParseResult<CsvByteRecordWithHash>,
+        > = CsvParserHasherSender::new(csv_hash_task_sender.sender);
+        csv_parser_hasher.parse_and_hash::<R, P>(
             csv_hash_task_sender.csv,
             &primary_key_columns,
             csv_hash_task_sender.receiver_recycle_csv,
         )
-        // let mut csv_parser_hasher: CsvParserHasherSender<
-        //     CsvLeftRightParseResult<CsvByteRecordWithHash>,
-        // > = CsvParserHasherSender::new(csv_hash_task_sender.sender);
-        // csv_parser_hasher.parse_and_hash::<R, P>(
-        //     csv_hash_task_sender.csv,
-        //     &primary_key_columns,
-        //     csv_hash_task_sender.receiver_recycle_csv,
-        // )
     }
 }
 
@@ -144,53 +124,33 @@ impl<'tp> CsvHashTaskSpawnerRayon<'tp> {
 impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
     fn spawn_hashing_tasks_and_send_result<R: Read + Send + 'static>(
         self,
-        mut csv_hash_task_sender_left: CsvHashTaskSenderWithRecycleReceiver<R>,
-        mut csv_hash_task_sender_right: CsvHashTaskSenderWithRecycleReceiver<R>,
+        csv_hash_task_sender_left: CsvHashTaskSenderWithRecycleReceiver<R>,
+        csv_hash_task_sender_right: CsvHashTaskSenderWithRecycleReceiver<R>,
         csv_hash_receiver_comparer: CsvHashReceiverStreamComparer,
         primary_key_columns: HashSet<usize>,
     ) -> (Self, Receiver<DiffByteRecordsIterator>) {
-        let (sender, receiver) = bounded(1);
+        let (sender, receiver) = unbounded();
 
-        csv_hash_task_sender_left.csv = match csv_hash_task_sender_left
-            .csv
-            .approx_num_of_lines(&primary_key_columns)
-        {
-            Ok(x) | Err(x) => x,
-        };
-
-        csv_hash_task_sender_right.csv = match csv_hash_task_sender_right
-            .csv
-            .approx_num_of_lines(&primary_key_columns)
-        {
-            Ok(x) | Err(x) => x,
-        };
-
-        let num_of_lines_hint_left = csv_hash_task_sender_left.csv.num_of_lines_hint.take();
-        let num_of_lines_hint_right = csv_hash_task_sender_right.csv.num_of_lines_hint.take();
-
-        let primary_key_columns_clone = primary_key_columns.clone();
+        let prim_key_columns_clone = primary_key_columns.clone();
 
         self.thread_pool.spawn(move || {
-            let mut diff_byte_records_iter = csv_hash_receiver_comparer.recv_hashes_and_compare();
-            diff_byte_records_iter
-                .num_of_lines_hint(num_of_lines_hint_left, num_of_lines_hint_right);
-            sender.send(diff_byte_records_iter).unwrap();
+            sender
+                .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
+                .unwrap();
         });
 
         self.thread_pool.spawn(move || {
-            Self::parse_hash_and_send_for_compare::<
-                R,
-                CsvParseResultLeft<CsvByteRecordWithHashFirstFewLines>,
-                CsvParseResultLeft<CsvByteRecordWithHash>,
-            >(csv_hash_task_sender_left, primary_key_columns_clone);
+            Self::parse_hash_and_send_for_compare::<R, CsvParseResultLeft<CsvByteRecordWithHash>>(
+                csv_hash_task_sender_left,
+                primary_key_columns,
+            );
         });
 
         self.thread_pool.spawn(move || {
-            Self::parse_hash_and_send_for_compare::<
-                R,
-                CsvParseResultRight<CsvByteRecordWithHashFirstFewLines>,
-                CsvParseResultRight<CsvByteRecordWithHash>,
-            >(csv_hash_task_sender_right, primary_key_columns);
+            Self::parse_hash_and_send_for_compare::<R, CsvParseResultRight<CsvByteRecordWithHash>>(
+                csv_hash_task_sender_right,
+                prim_key_columns_clone,
+            );
         });
 
         (self, receiver)
