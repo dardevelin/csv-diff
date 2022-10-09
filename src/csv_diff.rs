@@ -492,7 +492,7 @@ mod tests {
         diff_res_actual.sort_by_line();
         expected.sort_by_line();
 
-        assert_eq!(diff_res_actual, expected);
+        assert_eq!(diff_res_actual, expected, "csv_diff_local failed");
 
         Ok(())
     }
@@ -512,7 +512,7 @@ mod tests {
         actual.sort_by_line();
         expected.sort_by_line();
 
-        assert_eq!(actual, expected);
+        assert_eq!(actual, expected, "csv_diff failed");
         Ok(())
     }
 
