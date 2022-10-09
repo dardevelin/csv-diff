@@ -108,12 +108,17 @@ impl CsvByteRecordWithHash {
 #[derive(Debug)]
 pub struct CsvByteRecordWithHashFirstFewLines {
     pub(crate) records: Vec<CsvByteRecordWithHash>,
+    //num_of_lines_hint: u64,
 }
 
 impl CsvByteRecordWithHashFirstFewLines {
-    pub(crate) fn new(records: impl IntoIterator<Item = CsvByteRecordWithHash>) -> Self {
+    pub(crate) fn new(
+        records: impl IntoIterator<Item = CsvByteRecordWithHash>,
+        //num_of_lines_hint: u64,
+    ) -> Self {
         Self {
             records: records.into_iter().collect(),
+            //num_of_lines_hint,
         }
     }
 }
