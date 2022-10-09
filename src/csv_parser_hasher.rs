@@ -77,8 +77,6 @@ impl CsvParserHasherLinesSender<CsvLeftRightParseResult<RecordHashWithPosition>>
             //     .filter(|x| !primary_key_columns.contains(x))
             //     .collect();
 
-            let mut records_buff: StackVec<CsvLeftRightParseResult> = smallvec::SmallVec::new();
-
             let record = csv_record_first;
             let key_fields: Vec<_> = fields_as_key
                 .iter()
