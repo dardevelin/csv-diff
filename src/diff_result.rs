@@ -234,8 +234,8 @@ impl DiffByteRecordsIterator {
             csv_records_right_map_iter: None,
             intermediate_left_map: HashMap::new(),
             intermediate_right_map: HashMap::new(),
-            max_capacity_left_map: MaxCapacityThreshold::Dynamic(10),
-            max_capacity_right_map: MaxCapacityThreshold::Dynamic(10),
+            max_capacity_left_map: MaxCapacityThreshold::Dynamic(10), // TODO: update this during `next()`
+            max_capacity_right_map: MaxCapacityThreshold::Dynamic(10), // TODO: update this during `next()`
             sender_csv_records_recycle,
             chained_received_values: None,
         }
@@ -290,6 +290,7 @@ impl Iterator for DiffByteRecordsIterator {
             }
             Some(iter) => iter,
         };
+
         for csv_left_right_parse_result in iter_chained_csv_left_right_parse_result {
             match csv_left_right_parse_result {
                 CsvLeftRightParseResult::Left(left_record_res) => {
