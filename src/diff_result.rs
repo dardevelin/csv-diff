@@ -7,7 +7,7 @@ use ahash::AHashMap as HashMap;
 use crossbeam_channel::{Receiver, Sender};
 use std::{
     cmp::{max, Ordering},
-    collections::hash_map::IntoIter,
+    collections::{hash_map::IntoIter, VecDeque},
     convert::TryInto,
 };
 
@@ -184,7 +184,7 @@ impl MaxCapacityThreshold {
 }
 
 pub struct DiffByteRecordsIterator {
-    buf: Vec<DiffByteRecord>,
+    buf: VecDeque<DiffByteRecord>,
     csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
     csv_records_left_map: CsvByteRecordValueMap,
     csv_records_left_map_iter: Option<IntoIter<u128, HashMapValue<csv::ByteRecord>>>,
@@ -223,7 +223,7 @@ impl Iterator for DiffByteRecordsIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         if !self.buf.is_empty() {
-            return self.buf.pop();
+            return self.buf.pop_front();
         }
         while let Ok(csv_left_right_parse_result) = self.csv_left_right_parse_results.recv() {
             match csv_left_right_parse_result {
@@ -303,7 +303,7 @@ impl Iterator for DiffByteRecordsIterator {
                                         // TODO: handle error (although it shouldn't error here)
                                         .expect("a record position")
                                         .line();
-                                    self.buf.push(DiffByteRecord::Modify {
+                                    self.buf.push_back(DiffByteRecord::Modify {
                                         add: ByteRecordLineInfo::new(
                                             right_byte_record,
                                             right_byte_record_line,
@@ -400,7 +400,7 @@ impl Iterator for DiffByteRecordsIterator {
                                         .position()
                                         .expect("a record position")
                                         .line();
-                                    self.buf.push(DiffByteRecord::Modify {
+                                    self.buf.push_back(DiffByteRecord::Modify {
                                         add: ByteRecordLineInfo::new(
                                             right_byte_record,
                                             right_byte_record_line,
@@ -427,7 +427,7 @@ impl Iterator for DiffByteRecordsIterator {
         }
 
         if !self.buf.is_empty() {
-            return self.buf.pop();
+            return self.buf.pop_front();
         }
 
         let iter_left_map = self
