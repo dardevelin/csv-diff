@@ -3,7 +3,7 @@ use std::{
     io::{Read, Seek},
 };
 
-use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
+use crossbeam_channel::{bounded, Receiver, Sender};
 use csv::Reader;
 #[cfg(feature = "rayon-threads")]
 use mown::Mown;
@@ -156,6 +156,7 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct CsvHashTaskSpawnerStdThreads;
 
 impl CsvHashTaskSpawnerStdThreads {
@@ -207,6 +208,7 @@ pub trait CsvHashTaskSpawnerBuilder<T> {
     fn build(self) -> T;
 }
 
+#[derive(Debug, Default)]
 pub struct CsvHashTaskSpawnerBuilderStdThreads;
 
 impl CsvHashTaskSpawnerBuilderStdThreads {
@@ -248,7 +250,7 @@ pub trait CsvHashTaskSpawnerLocal {
             .sender_csv_reader
             .send(
                 csv_parser_hasher
-                    .parse_and_hash::<R, P>(csv_hash_task_senders.csv, &primary_key_columns),
+                    .parse_and_hash::<R, P>(csv_hash_task_senders.csv, primary_key_columns),
             )
             .unwrap();
     }

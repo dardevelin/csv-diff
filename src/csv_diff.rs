@@ -1,6 +1,7 @@
 use crate::csv::Csv;
 use crate::csv_hash_comparer::CsvHashComparer;
 use crate::csv_hash_receiver_comparer::CsvHashReceiverStreamComparer;
+#[cfg(not(feature = "rayon-threads"))]
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilder;
 #[cfg(feature = "rayon-threads")]
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerRayon;
@@ -57,7 +58,7 @@ where
         csv_left: Csv<R>,
         csv_right: Csv<R>,
     ) -> DiffByteRecordsIterator {
-        use crossbeam_channel::{bounded, unbounded};
+        use crossbeam_channel::unbounded;
 
         let (sender_right, receiver) = bounded(10_000);
         let sender_left = sender_right.clone();

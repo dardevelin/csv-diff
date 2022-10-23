@@ -88,7 +88,7 @@ impl Into<csv::Position> for Position {
     fn into(self) -> csv::Position {
         let mut csv_pos = csv::Position::new();
         std::mem::replace(
-            &mut csv_pos
+            csv_pos
                 .set_byte(self.byte_offset)
                 .set_line(self.line)
                 .set_record(self.line - 1),

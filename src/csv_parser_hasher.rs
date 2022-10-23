@@ -3,7 +3,6 @@ use csv::Reader;
 use std::collections::HashSet;
 use std::hash::Hasher;
 use std::io::{Read, Seek};
-use std::time::Duration;
 use xxhash_rust::xxh3::{xxh3_128, Xxh3};
 
 use crate::csv::Csv;
@@ -78,11 +77,8 @@ impl CsvParserHasherLinesSender<CsvLeftRightParseResult<RecordHashWithPosition>>
             //     .collect();
 
             let record = csv_record_first;
-            let key_fields: Vec<_> = fields_as_key
-                .iter()
-                .filter_map(|k_idx| record.get(*k_idx))
-                .collect();
-            if !key_fields.is_empty() {
+            let key_fields_iter = fields_as_key.iter().filter_map(|k_idx| record.get(*k_idx));
+            if key_fields_iter.peekable().peek().is_some() {
                 let key = record.hash_key_fields(fields_as_key.as_slice());
                 // TODO: don't hash all of it -> exclude the key fields (see below)
                 let hash_record = record.hash_record();
