@@ -157,6 +157,73 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
     }
 }
 
+pub struct CsvHashTaskSpawnerStdThreads;
+
+impl CsvHashTaskSpawnerStdThreads {
+    pub(crate) fn new() -> Self {
+        Self
+    }
+}
+
+impl CsvHashTaskSpawner for CsvHashTaskSpawnerStdThreads {
+    fn spawn_hashing_tasks_and_send_result<R: Read + Send + 'static>(
+        self,
+        csv_hash_task_sender_left: CsvHashTaskSenderWithRecycleReceiver<R>,
+        csv_hash_task_sender_right: CsvHashTaskSenderWithRecycleReceiver<R>,
+        csv_hash_receiver_comparer: CsvHashReceiverStreamComparer,
+        primary_key_columns: HashSet<usize>,
+    ) -> (Self, Receiver<DiffByteRecordsIterator>)
+    where
+        Self: Sized,
+    {
+        let (sender, receiver) = bounded(1);
+
+        let prim_key_columns_clone = primary_key_columns.clone();
+
+        std::thread::spawn(move || {
+            sender
+                .send(csv_hash_receiver_comparer.recv_hashes_and_compare())
+                .unwrap();
+        });
+
+        std::thread::spawn(move || {
+            Self::parse_hash_and_send_for_compare::<R, CsvParseResultLeft<CsvByteRecordWithHash>>(
+                csv_hash_task_sender_left,
+                primary_key_columns,
+            );
+        });
+
+        std::thread::spawn(move || {
+            Self::parse_hash_and_send_for_compare::<R, CsvParseResultRight<CsvByteRecordWithHash>>(
+                csv_hash_task_sender_right,
+                prim_key_columns_clone,
+            );
+        });
+
+        (self, receiver)
+    }
+}
+
+pub trait CsvHashTaskSpawnerBuilder<T> {
+    fn build(self) -> T;
+}
+
+pub struct CsvHashTaskSpawnerBuilderStdThreads;
+
+impl CsvHashTaskSpawnerBuilderStdThreads {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl CsvHashTaskSpawnerBuilder<CsvHashTaskSpawnerStdThreads>
+    for CsvHashTaskSpawnerBuilderStdThreads
+{
+    fn build(self) -> CsvHashTaskSpawnerStdThreads {
+        CsvHashTaskSpawnerStdThreads::new()
+    }
+}
+
 pub trait CsvHashTaskSpawnerLocal {
     fn spawn_hashing_tasks_and_send_result<R: Read + Seek + Send>(
         &self,

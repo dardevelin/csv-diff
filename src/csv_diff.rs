@@ -1,6 +1,7 @@
 use crate::csv::Csv;
 use crate::csv_hash_comparer::CsvHashComparer;
 use crate::csv_hash_receiver_comparer::CsvHashReceiverStreamComparer;
+use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilder;
 #[cfg(feature = "rayon-threads")]
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerRayon;
 use crate::csv_hash_task_spawner::{
@@ -86,6 +87,86 @@ where
         *hash_task_spawner_mut = Some(hash_task_spawner);
 
         receiver_diff_byte_record_iter.recv().unwrap()
+    }
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "rayon-threads", derive(Default))]
+pub struct CsvByteDiffBuilder<T: CsvHashTaskSpawner> {
+    primary_key_columns: HashSet<usize>,
+    #[cfg(feature = "rayon-threads")]
+    hash_task_spawner: Option<CsvHashTaskSpawnerRayon<'static>>,
+    #[cfg(feature = "rayon-threads")]
+    _phantom: PhantomData<T>,
+    #[cfg(not(feature = "rayon-threads"))]
+    hash_task_spawner: T,
+}
+
+impl<T> CsvByteDiffBuilder<T>
+where
+    T: CsvHashTaskSpawner,
+{
+    #[cfg(not(feature = "rayon-threads"))]
+    pub fn new<B>(csv_hash_task_spawner_builder: B) -> Self
+    where
+        B: CsvHashTaskSpawnerBuilder<T>,
+    {
+        Self {
+            primary_key_columns: std::iter::once(0).collect(),
+            hash_task_spawner: csv_hash_task_spawner_builder.build(),
+        }
+    }
+
+    pub fn primary_key_columns(mut self, columns: impl IntoIterator<Item = usize>) -> Self {
+        self.primary_key_columns = columns.into_iter().collect();
+        self
+    }
+
+    #[cfg(not(feature = "rayon-threads"))]
+    pub fn build(self) -> Result<CsvByteDiff<T>, CsvByteDiffBuilderError> {
+        if !self.primary_key_columns.is_empty() {
+            Ok(CsvByteDiff {
+                primary_key_columns: self.primary_key_columns,
+                hash_task_spawner: RefCell::new(Some(self.hash_task_spawner)),
+            })
+        } else {
+            Err(CsvByteDiffBuilderError::NoPrimaryKeyColumns)
+        }
+    }
+}
+
+#[cfg(feature = "rayon-threads")]
+impl<'tp> CsvByteDiffBuilder<CsvHashTaskSpawnerRayon<'static>> {
+    pub fn new() -> Self {
+        Self {
+            primary_key_columns: std::iter::once(0).collect(),
+            hash_task_spawner: None,
+            _phantom: PhantomData::default(),
+        }
+    }
+
+    pub fn rayon_thread_pool(mut self, thread_pool: &'static rayon::ThreadPool) -> Self {
+        self.hash_task_spawner = Some(CsvHashTaskSpawnerRayon::with_thread_pool_ref(thread_pool));
+        self
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    pub fn build(
+        self,
+    ) -> Result<CsvByteDiff<CsvHashTaskSpawnerRayon<'static>>, CsvByteDiffBuilderError> {
+        if !self.primary_key_columns.is_empty() {
+            Ok(CsvByteDiff {
+                primary_key_columns: self.primary_key_columns,
+                hash_task_spawner: match self.hash_task_spawner {
+                    Some(x) => RefCell::new(Some(x)),
+                    None => RefCell::new(Some(CsvHashTaskSpawnerRayon::with_thread_pool_owned(
+                        rayon::ThreadPoolBuilder::new().build()?,
+                    ))),
+                },
+            })
+        } else {
+            Err(CsvByteDiffBuilderError::NoPrimaryKeyColumns)
+        }
     }
 }
 
@@ -205,6 +286,7 @@ Ok(())
 "##
 )]
 #[derive(Debug)]
+#[cfg_attr(feature = "rayon-threads", derive(Default))]
 pub struct CsvByteDiffLocalBuilder<'tp, T: CsvHashTaskSpawnerLocal> {
     primary_key_columns: HashSet<usize>,
     #[cfg(feature = "rayon-threads")]
