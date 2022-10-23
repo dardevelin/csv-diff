@@ -3,8 +3,8 @@ use std::{
     io::{Read, Seek},
 };
 
-use crossbeam_channel::{unbounded, Receiver, Sender};
-use csv::{Error, Reader};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
+use csv::Reader;
 #[cfg(feature = "rayon-threads")]
 use mown::Mown;
 
@@ -129,7 +129,7 @@ impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
         csv_hash_receiver_comparer: CsvHashReceiverStreamComparer,
         primary_key_columns: HashSet<usize>,
     ) -> (Self, Receiver<DiffByteRecordsIterator>) {
-        let (sender, receiver) = unbounded();
+        let (sender, receiver) = bounded(1);
 
         let prim_key_columns_clone = primary_key_columns.clone();
 

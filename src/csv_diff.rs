@@ -18,7 +18,7 @@ use crate::csv_hash_task_spawner::{
 use crate::csv_parse_result::{CsvLeftRightParseResult, RecordHashWithPosition};
 use crate::diff_result::{DiffByteRecords, DiffByteRecordsIterator};
 use crate::thread_scope_strategy::*;
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{bounded, Receiver};
 use csv::Reader;
 use std::cell::RefCell;
 use std::io::{Read, Seek};
@@ -395,10 +395,10 @@ where
     ) -> csv::Result<DiffByteRecords> {
         use crossbeam_channel::unbounded;
 
-        let (sender_total_lines_right, receiver_total_lines_right) = unbounded();
-        let (sender_total_lines_left, receiver_total_lines_left) = unbounded();
-        let (sender_csv_reader_right, receiver_csv_reader_right) = unbounded();
-        let (sender_csv_reader_left, receiver_csv_reader_left) = unbounded();
+        let (sender_total_lines_right, receiver_total_lines_right) = bounded(1);
+        let (sender_total_lines_left, receiver_total_lines_left) = bounded(1);
+        let (sender_csv_reader_right, receiver_csv_reader_right) = bounded(1);
+        let (sender_csv_reader_left, receiver_csv_reader_left) = bounded(1);
         let (sender_right, receiver) = unbounded();
         let sender_left = sender_right.clone();
 
