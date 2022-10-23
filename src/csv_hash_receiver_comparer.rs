@@ -19,7 +19,7 @@ impl CsvHashReceiverStreamComparer {
             sender_csv_records_recycle,
         }
     }
-    pub(crate) fn recv_hashes_and_compare(self) -> DiffByteRecordsIterator {
+    pub fn recv_hashes_and_compare(self) -> DiffByteRecordsIterator {
         DiffByteRecordsIterator::new(self.receiver, self.sender_csv_records_recycle)
     }
 }
