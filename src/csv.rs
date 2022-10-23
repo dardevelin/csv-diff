@@ -1,14 +1,24 @@
 use std::io::{Cursor, Read, Seek};
 
-pub struct Csv<R: Read> {
+#[derive(Clone)]
+pub struct Csv<R> {
     reader: R,
     headers: bool,
 }
 
 impl<R: Read + Seek + Send> Csv<R> {
-    pub fn new<RSeek: CsvReadSeek<R>>(reader: RSeek) -> Self {
+    pub fn with_reader_seek<RSeek: CsvReadSeek<R>>(reader: RSeek) -> Self {
         Self {
             reader: reader.into_read_seek(),
+            headers: true,
+        }
+    }
+}
+
+impl<R: Read + Send> Csv<R> {
+    pub fn with_reader(reader: R) -> Self {
+        Self {
+            reader,
             headers: true,
         }
     }
@@ -22,19 +32,30 @@ impl<R: Read> From<Csv<R>> for csv::Reader<R> {
     }
 }
 
-pub struct CsvBuilder<R: Read> {
+pub struct CsvBuilder<R> {
     reader: R,
     headers: bool,
 }
 
 impl<R: Read + Seek + Send> CsvBuilder<R> {
-    pub fn new<RSeek: CsvReadSeek<R>>(reader: RSeek) -> Self {
+    pub fn with_reader_seek<RSeek: CsvReadSeek<R>>(reader: RSeek) -> Self {
         Self {
             reader: reader.into_read_seek(),
             headers: true,
         }
     }
+}
 
+impl<R: Read + Send> CsvBuilder<R> {
+    pub fn with_reader(reader: R) -> Self {
+        Self {
+            reader,
+            headers: true,
+        }
+    }
+}
+
+impl<R> CsvBuilder<R> {
     pub fn headers(self, yes: bool) -> Self {
         Self {
             headers: yes,

@@ -1,38 +1,189 @@
 use crate::csv::Csv;
-use crate::csv_hash_task_spawner::CsvHashTaskSenders;
+use crate::csv_hash_comparer::CsvHashComparer;
+use crate::csv_hash_receiver_comparer::CsvHashReceiverStreamComparer;
+#[cfg(not(feature = "rayon-threads"))]
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilder;
+#[cfg(feature = "rayon-threads")]
+use crate::csv_hash_task_spawner::CsvHashTaskSpawnerRayon;
+use crate::csv_hash_task_spawner::{
+    CsvHashTaskLineSenders, CsvHashTaskSenderWithRecycleReceiver, CsvHashTaskSpawner,
+    CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder,
+};
 #[cfg(feature = "crossbeam-threads")]
 use crate::csv_hash_task_spawner::{
-    CsvHashTaskSpawnerBuilderCrossbeam, CsvHashTaskSpawnerCrossbeam,
+    CsvHashTaskSpawnerLocalBuilderCrossbeam, CsvHashTaskSpawnerLocalCrossbeam,
 };
 #[cfg(feature = "rayon-threads")]
-use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerBuilderRayon, CsvHashTaskSpawnerRayon};
-use crate::csv_parse_result::CsvLeftRightParseResult;
-use crate::csv_parser_hasher::*;
-use crate::diff_result::DiffByteRecords;
+use crate::csv_hash_task_spawner::{
+    CsvHashTaskSpawnerLocalBuilderRayon, CsvHashTaskSpawnerLocalRayon,
+};
+use crate::csv_parse_result::{CsvLeftRightParseResult, RecordHashWithPosition};
+use crate::diff_result::{DiffByteRecords, DiffByteRecordsIterator};
 use crate::thread_scope_strategy::*;
-use crate::{csv_hash_comparer::CsvHashComparer, csv_hash_task_spawner::CsvHashTaskSpawner};
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{bounded, Receiver};
 use csv::Reader;
+use std::cell::RefCell;
 use std::io::{Read, Seek};
 use std::marker::PhantomData;
+use std::sync::Arc;
 use std::{collections::HashSet, iter::Iterator};
 use thiserror::Error;
 
+#[derive(Debug)]
+pub struct CsvByteDiff<T: CsvHashTaskSpawner> {
+    primary_key_columns: HashSet<usize>,
+    // TODO: try to find a way to remove interior mutability in `diff` method
+    hash_task_spawner: RefCell<Option<T>>,
+}
+
+#[cfg(feature = "rayon-threads")]
+impl CsvByteDiff<CsvHashTaskSpawnerRayon> {
+    pub fn new() -> Result<Self, CsvDiffNewError> {
+        let mut instance = Self {
+            primary_key_columns: HashSet::new(),
+            hash_task_spawner: RefCell::new(Some(CsvHashTaskSpawnerRayon::with_thread_pool_owned(
+                rayon::ThreadPoolBuilder::new().build()?,
+            ))),
+        };
+        instance.primary_key_columns.insert(0);
+        Ok(instance)
+    }
+}
+
+impl<T> CsvByteDiff<T>
+where
+    T: CsvHashTaskSpawner,
+{
+    pub fn diff<R: Read + Send + 'static>(
+        &self,
+        csv_left: Csv<R>,
+        csv_right: Csv<R>,
+    ) -> DiffByteRecordsIterator {
+        use crossbeam_channel::unbounded;
+
+        let (sender_right, receiver) = bounded(10_000);
+        let sender_left = sender_right.clone();
+
+        let (sender_csv_recycle, receiver_csv_recycle) = unbounded();
+
+        let hts = self.hash_task_spawner.take().take();
+
+        let (hash_task_spawner, receiver_diff_byte_record_iter) =
+            // TODO: remove unwrap!!!
+            hts.unwrap().spawn_hashing_tasks_and_send_result(
+                CsvHashTaskSenderWithRecycleReceiver::new(
+                    sender_left,
+                    csv_left,
+                    receiver_csv_recycle.clone()
+                ),
+                CsvHashTaskSenderWithRecycleReceiver::new(
+                    sender_right,
+                    csv_right,
+                    receiver_csv_recycle
+                ),
+                CsvHashReceiverStreamComparer::new(receiver, sender_csv_recycle),
+                self.primary_key_columns.clone(),
+            );
+
+        let mut hash_task_spawner_mut = self.hash_task_spawner.borrow_mut();
+        *hash_task_spawner_mut = Some(hash_task_spawner);
+
+        receiver_diff_byte_record_iter.recv().unwrap()
+    }
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "rayon-threads", derive(Default))]
+pub struct CsvByteDiffBuilder<T: CsvHashTaskSpawner> {
+    primary_key_columns: HashSet<usize>,
+    #[cfg(feature = "rayon-threads")]
+    hash_task_spawner: Option<CsvHashTaskSpawnerRayon>,
+    #[cfg(feature = "rayon-threads")]
+    _phantom: PhantomData<T>,
+    #[cfg(not(feature = "rayon-threads"))]
+    hash_task_spawner: T,
+}
+
+impl<T> CsvByteDiffBuilder<T>
+where
+    T: CsvHashTaskSpawner,
+{
+    #[cfg(not(feature = "rayon-threads"))]
+    pub fn new<B>(csv_hash_task_spawner_builder: B) -> Self
+    where
+        B: CsvHashTaskSpawnerBuilder<T>,
+    {
+        Self {
+            primary_key_columns: std::iter::once(0).collect(),
+            hash_task_spawner: csv_hash_task_spawner_builder.build(),
+        }
+    }
+
+    pub fn primary_key_columns(mut self, columns: impl IntoIterator<Item = usize>) -> Self {
+        self.primary_key_columns = columns.into_iter().collect();
+        self
+    }
+
+    #[cfg(not(feature = "rayon-threads"))]
+    pub fn build(self) -> Result<CsvByteDiff<T>, CsvByteDiffBuilderError> {
+        if !self.primary_key_columns.is_empty() {
+            Ok(CsvByteDiff {
+                primary_key_columns: self.primary_key_columns,
+                hash_task_spawner: RefCell::new(Some(self.hash_task_spawner)),
+            })
+        } else {
+            Err(CsvByteDiffBuilderError::NoPrimaryKeyColumns)
+        }
+    }
+}
+
+#[cfg(feature = "rayon-threads")]
+impl CsvByteDiffBuilder<CsvHashTaskSpawnerRayon> {
+    pub fn new() -> Self {
+        Self {
+            primary_key_columns: std::iter::once(0).collect(),
+            hash_task_spawner: None,
+            _phantom: PhantomData::default(),
+        }
+    }
+
+    pub fn rayon_thread_pool(mut self, thread_pool: Arc<rayon::ThreadPool>) -> Self {
+        self.hash_task_spawner = Some(CsvHashTaskSpawnerRayon::with_thread_pool_arc(thread_pool));
+        self
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    pub fn build(self) -> Result<CsvByteDiff<CsvHashTaskSpawnerRayon>, CsvByteDiffBuilderError> {
+        if !self.primary_key_columns.is_empty() {
+            Ok(CsvByteDiff {
+                primary_key_columns: self.primary_key_columns,
+                hash_task_spawner: match self.hash_task_spawner {
+                    Some(x) => RefCell::new(Some(x)),
+                    None => RefCell::new(Some(CsvHashTaskSpawnerRayon::with_thread_pool_owned(
+                        rayon::ThreadPoolBuilder::new().build()?,
+                    ))),
+                },
+            })
+        } else {
+            Err(CsvByteDiffBuilderError::NoPrimaryKeyColumns)
+        }
+    }
+}
+
 /// Compare two [CSVs](https://en.wikipedia.org/wiki/Comma-separated_values) with each other.
 ///
-/// `CsvByteDiff` uses scoped threads internally for comparison.
+/// `CsvByteDiffLocal` uses scoped threads internally for comparison.
 /// By default, it uses [rayon's scoped threads within a rayon thread pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html#method.scope).
-/// See also [`rayon_thread_pool`](CsvByteDiffBuilder::rayon_thread_pool) on [`CsvByteDiffBuilder`](CsvByteDiffBuilder)
+/// See also [`rayon_thread_pool`](CsvByteDiffLocalBuilder::rayon_thread_pool) on [`CsvByteDiffLocalBuilder`](CsvByteDiffLocalBuilder)
 /// for using an existing [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html)
-/// when creating `CsvByteDiff`.
+/// when creating `CsvByteDiffLocal`.
 ///
-/// # Example: create `CsvByteDiff` with default values and compare two CSVs byte-wise
+/// # Example: create `CsvByteDiffLocal` with default values and compare two CSVs byte-wise
 #[cfg_attr(
     feature = "rayon-threads",
     doc = r##"
 ```
-use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
+use csv_diff::{csv_diff::CsvByteDiffLocal, csv::Csv};
 use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -45,11 +196,11 @@ let csv_data_right = "id,name,kind\n\
                       1,lemon,fruit\n\
                       2,strawberry,nut";
 
-let csv_byte_diff = CsvByteDiff::new()?;
+let csv_byte_diff = CsvByteDiffLocal::new()?;
 
 let mut diff_byte_records = csv_byte_diff.diff(
-    Csv::new(csv_data_left.as_bytes()),
-    Csv::new(csv_data_right.as_bytes()),
+    Csv::with_reader_seek(csv_data_left.as_bytes()),
+    Csv::with_reader_seek(csv_data_right.as_bytes()),
 )?;
 
 diff_byte_records.sort_by_line();
@@ -73,18 +224,18 @@ Ok(())
 "##
 )]
 #[derive(Debug)]
-pub struct CsvByteDiff<T: CsvHashTaskSpawner> {
+pub struct CsvByteDiffLocal<T: CsvHashTaskSpawnerLocal> {
     primary_key_columns: HashSet<usize>,
     hash_task_spawner: T,
 }
 
-/// Create a [`CsvByteDiff`](CsvByteDiff) with configuration options.
-/// # Example: create a `CsvByteDiff`, where column 1 and column 3 are treated as a compound primary key.
+/// Create a [`CsvByteDiffLocal`](CsvByteDiffLocal) with configuration options.
+/// # Example: create a `CsvByteDiffLocal`, where column 1 and column 3 are treated as a compound primary key.
 #[cfg_attr(
     feature = "rayon-threads",
     doc = r##"
 ```
-use csv_diff::{csv_diff::{CsvByteDiff, CsvByteDiffBuilder}, csv::Csv};
+use csv_diff::{csv_diff::{CsvByteDiffLocal, CsvByteDiffLocalBuilder}, csv::Csv};
 use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -103,13 +254,13 @@ let csv_data_right = "\
                                           // because "id" and "commit_sha" are different and both columns
                                           // _together_ represent the primary key
 
-let csv_byte_diff = CsvByteDiffBuilder::new()
+let csv_byte_diff = CsvByteDiffLocalBuilder::new()
     .primary_key_columns(vec![0usize, 2])
     .build()?;
 
 let mut diff_byte_records = csv_byte_diff.diff(
-    Csv::new(csv_data_left.as_bytes()),
-    Csv::new(csv_data_right.as_bytes()),
+    Csv::with_reader_seek(csv_data_left.as_bytes()),
+    Csv::with_reader_seek(csv_data_right.as_bytes()),
 )?;
 
 diff_byte_records.sort_by_line();
@@ -135,10 +286,11 @@ Ok(())
 "##
 )]
 #[derive(Debug)]
-pub struct CsvByteDiffBuilder<'tp, T: CsvHashTaskSpawner> {
+#[cfg_attr(feature = "rayon-threads", derive(Default))]
+pub struct CsvByteDiffLocalBuilder<'tp, T: CsvHashTaskSpawnerLocal> {
     primary_key_columns: HashSet<usize>,
     #[cfg(feature = "rayon-threads")]
-    hash_task_spawner: Option<CsvHashTaskSpawnerRayon<'tp>>,
+    hash_task_spawner: Option<CsvHashTaskSpawnerLocalRayon<'tp>>,
     #[cfg(feature = "rayon-threads")]
     _phantom: PhantomData<T>,
     #[cfg(not(feature = "rayon-threads"))]
@@ -147,14 +299,14 @@ pub struct CsvByteDiffBuilder<'tp, T: CsvHashTaskSpawner> {
     hash_task_spawner: T,
 }
 
-impl<'tp, T> CsvByteDiffBuilder<'tp, T>
+impl<'tp, T> CsvByteDiffLocalBuilder<'tp, T>
 where
-    T: CsvHashTaskSpawner,
+    T: CsvHashTaskSpawnerLocal,
 {
     #[cfg(not(feature = "rayon-threads"))]
     pub fn new<B>(csv_hash_task_spawner_builder: B) -> Self
     where
-        B: CsvHashTaskSpawnerBuilder<T>,
+        B: CsvHashTaskSpawnerLocalBuilder<T>,
     {
         Self {
             primary_key_columns: std::iter::once(0).collect(),
@@ -169,9 +321,9 @@ where
     }
 
     #[cfg(not(feature = "rayon-threads"))]
-    pub fn build(self) -> Result<CsvByteDiff<T>, CsvByteDiffBuilderError> {
+    pub fn build(self) -> Result<CsvByteDiffLocal<T>, CsvByteDiffBuilderError> {
         if !self.primary_key_columns.is_empty() {
-            Ok(CsvByteDiff {
+            Ok(CsvByteDiffLocal {
                 primary_key_columns: self.primary_key_columns,
                 hash_task_spawner: self.hash_task_spawner,
             })
@@ -182,7 +334,7 @@ where
 }
 
 #[cfg(feature = "rayon-threads")]
-impl<'tp> CsvByteDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
+impl<'tp> CsvByteDiffLocalBuilder<'tp, CsvHashTaskSpawnerLocalRayon<'tp>> {
     pub fn new() -> Self {
         Self {
             primary_key_columns: std::iter::once(0).collect(),
@@ -192,20 +344,21 @@ impl<'tp> CsvByteDiffBuilder<'tp, CsvHashTaskSpawnerRayon<'tp>> {
     }
 
     pub fn rayon_thread_pool(mut self, thread_pool: &'tp rayon::ThreadPool) -> Self {
-        self.hash_task_spawner = Some(CsvHashTaskSpawnerBuilderRayon::new(thread_pool).build());
+        self.hash_task_spawner =
+            Some(CsvHashTaskSpawnerLocalBuilderRayon::new(thread_pool).build());
         self
     }
 
     #[cfg(feature = "rayon-threads")]
     pub fn build(
         self,
-    ) -> Result<CsvByteDiff<CsvHashTaskSpawnerRayon<'tp>>, CsvByteDiffBuilderError> {
+    ) -> Result<CsvByteDiffLocal<CsvHashTaskSpawnerLocalRayon<'tp>>, CsvByteDiffBuilderError> {
         if !self.primary_key_columns.is_empty() {
-            Ok(CsvByteDiff {
+            Ok(CsvByteDiffLocal {
                 primary_key_columns: self.primary_key_columns,
                 hash_task_spawner: match self.hash_task_spawner {
                     Some(x) => x,
-                    None => CsvHashTaskSpawnerRayon::new(RayonScope::with_thread_pool_owned(
+                    None => CsvHashTaskSpawnerLocalRayon::new(RayonScope::with_thread_pool_owned(
                         rayon::ThreadPoolBuilder::new().build()?,
                     )),
                 },
@@ -233,21 +386,21 @@ pub enum CsvDiffNewError {
 }
 
 #[cfg(feature = "rayon-threads")]
-impl CsvByteDiff<CsvHashTaskSpawnerRayon<'_>> {
-    /// Constructs a new `CsvByteDiff<CsvHashTaskSpawnerRayon<'_>>` with a default configuration.
+impl CsvByteDiffLocal<CsvHashTaskSpawnerLocalRayon<'_>> {
+    /// Constructs a new `CsvByteDiffLocal<CsvHashTaskSpawnerRayon<'_>>` with a default configuration.
     /// The values in the first column of each CSV will be declared as the primary key, in order
     /// to match the CSV records against each other.
     /// During the construction, a new [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html)
-    /// is created, which will be used later during the [comparison of CSVs](CsvByteDiff::diff).
+    /// is created, which will be used later during the [comparison of CSVs](CsvByteDiffLocal::diff).
     ///
-    /// If you need to have more control over the configuration of `CsvByteDiff<CsvHashTaskSpawnerRayon<'_>>`,
-    /// consider using a [`CsvByteDiffBuilder`](CsvByteDiffBuilder) instead.
+    /// If you need to have more control over the configuration of `CsvByteDiffLocal<CsvHashTaskSpawnerRayon<'_>>`,
+    /// consider using a [`CsvByteDiffLocalBuilder`](CsvByteDiffLocalBuilder) instead.
     pub fn new() -> Result<Self, CsvDiffNewError> {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
-            hash_task_spawner: CsvHashTaskSpawnerRayon::new(RayonScope::with_thread_pool_owned(
-                rayon::ThreadPoolBuilder::new().build()?,
-            )),
+            hash_task_spawner: CsvHashTaskSpawnerLocalRayon::new(
+                RayonScope::with_thread_pool_owned(rayon::ThreadPoolBuilder::new().build()?),
+            ),
         };
         instance.primary_key_columns.insert(0);
         Ok(instance)
@@ -255,20 +408,20 @@ impl CsvByteDiff<CsvHashTaskSpawnerRayon<'_>> {
 }
 
 #[cfg(feature = "crossbeam-threads")]
-impl CsvByteDiff<CsvHashTaskSpawnerCrossbeam> {
+impl CsvByteDiffLocal<CsvHashTaskSpawnerLocalCrossbeam> {
     pub fn new() -> Self {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
-            hash_task_spawner: CsvHashTaskSpawnerCrossbeam::new(CrossbeamScope::new()),
+            hash_task_spawner: CsvHashTaskSpawnerLocalCrossbeam::new(CrossbeamScope::new()),
         };
         instance.primary_key_columns.insert(0);
         instance
     }
 }
 
-impl<T> CsvByteDiff<T>
+impl<T> CsvByteDiffLocal<T>
 where
-    T: CsvHashTaskSpawner,
+    T: CsvHashTaskSpawnerLocal,
 {
     /// Compares `csv_left` with `csv_right` and returns the [CSV byte records](crate::diff_result::DiffByteRecords) that are different.
     ///
@@ -278,7 +431,7 @@ where
     #[cfg_attr(
         feature = "rayon-threads",
         doc = r##"
-    use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
+    use csv_diff::{csv_diff::CsvByteDiffLocal, csv::Csv};
     use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
     use std::collections::HashSet;
     use std::iter::FromIterator;
@@ -291,11 +444,11 @@ where
                           1,lemon,fruit\n\
                           2,strawberry,nut";
 
-    let csv_byte_diff = CsvByteDiff::new()?;
+    let csv_byte_diff = CsvByteDiffLocal::new()?;
 
     let mut diff_byte_records = csv_byte_diff.diff(
-        Csv::new(csv_data_left.as_bytes()),
-        Csv::new(csv_data_right.as_bytes()),
+        Csv::with_reader_seek(csv_data_left.as_bytes()),
+        Csv::with_reader_seek(csv_data_right.as_bytes()),
     )?;
 
     diff_byte_records.sort_by_line();
@@ -324,21 +477,21 @@ where
     ) -> csv::Result<DiffByteRecords> {
         use crossbeam_channel::unbounded;
 
-        let (sender_total_lines_right, receiver_total_lines_right) = unbounded();
-        let (sender_total_lines_left, receiver_total_lines_left) = unbounded();
-        let (sender_csv_reader_right, receiver_csv_reader_right) = unbounded();
-        let (sender_csv_reader_left, receiver_csv_reader_left) = unbounded();
+        let (sender_total_lines_right, receiver_total_lines_right) = bounded(1);
+        let (sender_total_lines_left, receiver_total_lines_left) = bounded(1);
+        let (sender_csv_reader_right, receiver_csv_reader_right) = bounded(1);
+        let (sender_csv_reader_left, receiver_csv_reader_left) = bounded(1);
         let (sender_right, receiver) = unbounded();
         let sender_left = sender_right.clone();
 
         self.hash_task_spawner.spawn_hashing_tasks_and_send_result(
-            CsvHashTaskSenders::new(
+            CsvHashTaskLineSenders::new(
                 sender_left,
                 sender_total_lines_left,
                 sender_csv_reader_left,
                 csv_left,
             ),
-            CsvHashTaskSenders::new(
+            CsvHashTaskLineSenders::new(
                 sender_right,
                 sender_total_lines_right,
                 sender_csv_reader_right,
@@ -362,7 +515,7 @@ where
         receiver_total_lines_right: Receiver<u64>,
         receiver_csv_reader_left: Receiver<csv::Result<Reader<R>>>,
         receiver_csv_reader_right: Receiver<csv::Result<Reader<R>>>,
-        receiver: Receiver<StackVec<CsvLeftRightParseResult>>,
+        receiver: Receiver<CsvLeftRightParseResult<RecordHashWithPosition>>,
     ) -> csv::Result<DiffByteRecords>
     where
         R: Read + Seek + Send,
@@ -405,24 +558,63 @@ mod tests {
     use crate::diff_result::DiffByteRecords;
     use crate::diff_row::{ByteRecordLineInfo, DiffByteRecord};
     use pretty_assertions::assert_eq;
-    use std::{error::Error, io::Cursor};
+    use std::error::Error;
+
+    fn csv_diff_local_with_sorting<T: CsvHashTaskSpawnerLocal>(
+        csv_left: &str,
+        csv_right: &str,
+        mut expected: DiffByteRecords,
+        csv_diff: CsvByteDiffLocal<T>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_res_actual = csv_diff.diff(
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
+        )?;
+
+        diff_res_actual.sort_by_line();
+        expected.sort_by_line();
+
+        assert_eq!(diff_res_actual, expected, "csv_diff_local failed");
+
+        Ok(())
+    }
+
+    fn csv_diff_with_sorting<T: CsvHashTaskSpawner>(
+        csv_left: &'static str,
+        csv_right: &'static str,
+        mut expected: DiffByteRecords,
+        csv_diff: CsvByteDiff<T>,
+    ) -> Result<(), Box<dyn Error>> {
+        let diff_iter = csv_diff.diff(
+            Csv::with_reader(csv_left.as_bytes()),
+            Csv::with_reader(csv_right.as_bytes()),
+        );
+
+        let diff_byte_records: csv::Result<Vec<DiffByteRecord>> = diff_iter.collect();
+        let diff_byte_records = diff_byte_records?;
+        let mut actual = DiffByteRecords(diff_byte_records);
+        actual.sort_by_line();
+        expected.sort_by_line();
+
+        assert_eq!(actual, expected, "csv_diff failed");
+        Ok(())
+    }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn diff_empty_no_diff() -> Result<(), Box<dyn Error>> {
         let csv_left = "";
         let csv_right = "";
+        let expected = DiffByteRecords(vec![]);
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![]);
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -433,12 +625,12 @@ mod tests {
         let csv_left = "";
         let csv_right = "";
 
-        let diff_res_actual = CsvByteDiff::new()?
+        let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(false)
                     .build(),
-                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -455,16 +647,16 @@ mod tests {
         let csv_left = "header1,header2,header3";
         let csv_right = "header1,header2,header3";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![]);
+        let expected = DiffByteRecords(vec![]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -477,16 +669,16 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![]);
+        let expected = DiffByteRecords(vec![]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -499,12 +691,12 @@ mod tests {
         let csv_right = "\
                         a,b,c";
 
-        let diff_res_actual = CsvByteDiff::new()?
+        let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(false)
                     .build(),
-                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -525,12 +717,12 @@ mod tests {
                         header1,header2,header3";
         let csv_right = "";
 
-        let diff_res_actual = CsvByteDiff::new()?
+        let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(true)
                     .build(),
-                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -549,16 +741,16 @@ mod tests {
                         header1,header2,header3";
         let csv_right = "";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![]);
+        let expected = DiffByteRecords(vec![]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -571,16 +763,16 @@ mod tests {
                         header1,header2,header3\n\
                         ༼,౪,༽";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![]);
+        let expected = DiffByteRecords(vec![]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -594,10 +786,10 @@ mod tests {
         let csv_right = "\
                         a,b,c";
 
-        let diff_res_actual = CsvByteDiff::new()?
+        let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                Csv::with_reader_seek(csv_left.as_bytes()),
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -618,20 +810,20 @@ mod tests {
                         header1,header2,header3\n\
                         ༼,౪,༼";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["༼", "౪", "༽"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["༼", "౪", "༼"]), 2),
             field_indices: vec![2],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -644,18 +836,19 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Add(
-            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-        )]);
+        let expected = DiffByteRecords(vec![DiffByteRecord::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["a", "b", "c"]),
+            2,
+        ))]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -669,12 +862,12 @@ mod tests {
         let csv_right = "\
                         a,b,c";
 
-        let diff_res_actual = CsvByteDiff::new()?
+        let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(true)
                     .build(),
-                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(false)
                     .build(),
             )
@@ -697,18 +890,19 @@ mod tests {
                         header1,header2,header3\n\
                         ";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Delete(
-            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
-        )]);
+        let expected = DiffByteRecords(vec![DiffByteRecord::Delete(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["a", "b", "c"]),
+            2,
+        ))]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -722,12 +916,12 @@ mod tests {
                         header1,header2,header3\n\
                         ";
 
-        let diff_res_actual = CsvByteDiff::new()?
+        let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::new(Cursor::new(csv_left.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_left.as_bytes())
                     .headers(false)
                     .build(),
-                CsvBuilder::new(Cursor::new(csv_right.as_bytes()))
+                CsvBuilder::with_reader_seek(csv_right.as_bytes())
                     .headers(true)
                     .build(),
             )
@@ -750,20 +944,20 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,d";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
             field_indices: vec![2],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -776,20 +970,20 @@ mod tests {
                         header1,header2,header3\n\
                         a,c,d";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "c", "d"]), 2),
             field_indices: vec![1, 2],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -802,13 +996,7 @@ mod tests {
                         header1,header2,header3,header4,header5,header6,header7,header8\n\
                         a,c,d,e,f,g,h,i";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(
                 csv::ByteRecord::from(vec!["a", "b", "c", "d", "e", "f", "g", "h"]),
                 2,
@@ -820,8 +1008,14 @@ mod tests {
             field_indices: vec![1, 2, 3, 4, 5, 6, 7],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -836,16 +1030,9 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![]);
+        let expected = DiffByteRecords(vec![]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(csv_left, csv_right, expected, CsvByteDiffLocal::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -860,16 +1047,16 @@ mod tests {
                         d,e,f\n\
                         a,b,c";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![]);
+        let expected = DiffByteRecords(vec![]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -885,18 +1072,19 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Add(
-            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 2),
-        )]);
+        let expected = DiffByteRecords(vec![DiffByteRecord::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["x", "y", "z"]),
+            2,
+        ))]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -912,18 +1100,19 @@ mod tests {
                         x,y,z\n\
                         d,e,f";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Add(
-            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 3),
-        )]);
+        let expected = DiffByteRecords(vec![DiffByteRecord::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["x", "y", "z"]),
+            3,
+        ))]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -939,18 +1128,19 @@ mod tests {
                         d,e,f\n\
                         x,y,z";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Add(
-            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
-        )]);
+        let expected = DiffByteRecords(vec![DiffByteRecord::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["x", "y", "z"]),
+            4,
+        ))]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -966,18 +1156,19 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Delete(
-            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 2),
-        )]);
+        let expected = DiffByteRecords(vec![DiffByteRecord::Delete(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["x", "y", "z"]),
+            2,
+        ))]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -993,18 +1184,19 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Delete(
-            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 3),
-        )]);
+        let expected = DiffByteRecords(vec![DiffByteRecord::Delete(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["x", "y", "z"]),
+            3,
+        ))]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1020,18 +1212,19 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Delete(
-            ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
-        )]);
+        let expected = DiffByteRecords(vec![DiffByteRecord::Delete(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["x", "y", "z"]),
+            4,
+        ))]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1048,20 +1241,20 @@ mod tests {
                         d,e,f\n\
                         x,y,z";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "x", "c"]), 2),
             field_indices: vec![1],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1079,20 +1272,20 @@ mod tests {
                         a,x,c\n\
                         x,y,z";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "x", "c"]), 3),
             field_indices: vec![1],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1109,20 +1302,20 @@ mod tests {
                         d,x,f\n\
                         x,y,z";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "e", "f"]), 3),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "x", "f"]), 3),
             field_indices: vec![1],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1140,20 +1333,20 @@ mod tests {
                         a,b,c\n\
                         x,y,z";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "e", "f"]), 3),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "x", "f"]), 2),
             field_indices: vec![1],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1170,20 +1363,20 @@ mod tests {
                         d,e,f\n\
                         x,x,z";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "x", "z"]), 4),
             field_indices: vec![1],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1201,20 +1394,20 @@ mod tests {
                         a,b,c\n\
                         d,e,f";
 
-        let diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 4),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "x", "z"]), 2),
             field_indices: vec![1],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1232,13 +1425,7 @@ mod tests {
                         g,h,i\n\
                         x,y,z";
 
-        let mut diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let mut diff_res_expected = DiffByteRecords(vec![
+        let expected = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
                 csv::ByteRecord::from(vec!["d", "e", "f"]),
                 3,
@@ -1249,10 +1436,14 @@ mod tests {
             )),
         ]);
 
-        diff_res_actual.sort_by_line();
-        diff_res_expected.sort_by_line();
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1270,13 +1461,7 @@ mod tests {
                         x,y,z\n\
                         g,h,i";
 
-        let mut diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let mut diff_res_expected = DiffByteRecords(vec![
+        let expected = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
                 csv::ByteRecord::from(vec!["d", "e", "f"]),
                 3,
@@ -1287,10 +1472,14 @@ mod tests {
             )),
         ]);
 
-        diff_res_actual.sort_by_line();
-        diff_res_expected.sort_by_line();
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1307,13 +1496,7 @@ mod tests {
                         a,b,d\n\
                         x,y,z";
 
-        let mut diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let mut diff_res_expected = DiffByteRecords(vec![
+        let expected = DiffByteRecords(vec![
             DiffByteRecord::Modify {
                 delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
                 add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 3),
@@ -1329,10 +1512,14 @@ mod tests {
             )),
         ]);
 
-        diff_res_actual.sort_by_line();
-        diff_res_expected.sort_by_line();
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1349,13 +1536,7 @@ mod tests {
                         x,y,a\n\
                         g,h,i";
 
-        let mut diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let mut diff_res_expected = DiffByteRecords(vec![
+        let expected = DiffByteRecords(vec![
             DiffByteRecord::Modify {
                 delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "z"]), 3),
                 add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["x", "y", "a"]), 3),
@@ -1367,10 +1548,14 @@ mod tests {
             )),
         ]);
 
-        diff_res_actual.sort_by_line();
-        diff_res_expected.sort_by_line();
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1389,13 +1574,7 @@ mod tests {
                         j,k,l\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let mut diff_res_expected = DiffByteRecords(vec![
+        let expected = DiffByteRecords(vec![
             DiffByteRecord::Add(ByteRecordLineInfo::new(
                 csv::ByteRecord::from(vec!["j", "k", "l"]),
                 5,
@@ -1406,10 +1585,14 @@ mod tests {
             )),
         ]);
 
-        diff_res_actual.sort_by_line();
-        diff_res_expected.sort_by_line();
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1424,13 +1607,7 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,c";
 
-        let mut diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let mut diff_res_expected = DiffByteRecords(vec![
+        let expected = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
                 csv::ByteRecord::from(vec!["d", "e", "f"]),
                 3,
@@ -1441,10 +1618,14 @@ mod tests {
             )),
         ]);
 
-        diff_res_actual.sort_by_line();
-        diff_res_expected.sort_by_line();
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1461,13 +1642,7 @@ mod tests {
                         d,e,f\n\
                         g,h,x";
 
-        let mut diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let mut diff_res_expected = DiffByteRecords(vec![
+        let expected = DiffByteRecords(vec![
             DiffByteRecord::Modify {
                 delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
                 add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
@@ -1480,10 +1655,14 @@ mod tests {
             },
         ]);
 
-        diff_res_actual.sort_by_line();
-        diff_res_expected.sort_by_line();
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1505,13 +1684,7 @@ mod tests {
                         x,y,z\n\
                         j,k,x\n";
 
-        let mut diff_res_actual = CsvByteDiff::new()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let mut diff_res_expected = DiffByteRecords(vec![
+        let expected = DiffByteRecords(vec![
             DiffByteRecord::Modify {
                 delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
                 add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
@@ -1540,10 +1713,14 @@ mod tests {
             )),
         ]);
 
-        diff_res_actual.sort_by_line();
-        diff_res_expected.sort_by_line();
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(
+            csv_left,
+            csv_right,
+            expected.clone(),
+            CsvByteDiffLocal::new()?,
+        )?;
+
+        csv_diff_with_sorting(csv_left, csv_right, expected, CsvByteDiff::new()?)
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1552,7 +1729,7 @@ mod tests {
     ) -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
         let expected = CsvByteDiffBuilderError::NoPrimaryKeyColumns;
-        let actual = CsvByteDiffBuilder::new()
+        let actual = CsvByteDiffLocalBuilder::new()
             .rayon_thread_pool(&thread_pool)
             .primary_key_columns(std::iter::empty())
             .build();
@@ -1570,7 +1747,7 @@ mod tests {
     #[test]
     fn builder_without_specified_primary_key_columns_is_ok() -> Result<(), Box<dyn Error>> {
         // it is ok, because it gets a sensible default value
-        assert!(CsvByteDiffBuilder::new()
+        assert!(CsvByteDiffLocalBuilder::new()
             .rayon_thread_pool(&rayon::ThreadPoolBuilder::new().build()?)
             .build()
             .is_ok());
@@ -1581,7 +1758,7 @@ mod tests {
     #[test]
     fn diff_created_with_existing_thread_pool_works() -> Result<(), Box<dyn Error>> {
         let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
-        let csv_diff = CsvByteDiffBuilder::new()
+        let csv_diff_local = CsvByteDiffLocalBuilder::new()
             .rayon_thread_pool(&thread_pool)
             .build()?;
 
@@ -1592,20 +1769,16 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,d";
 
-        let diff_res_actual = csv_diff
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )
-            .unwrap();
-        let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Modify {
+        let expected = DiffByteRecords(vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
             add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
             field_indices: vec![2],
         }]);
 
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(csv_left, csv_right, expected, csv_diff_local)
+
+        // TODO: also create a builder for `CsvByteDiff`, so that we can test the following
+        // csv_diff_with_sorting(csv_left, csv_right, expected, csv_diff)?
     }
 
     #[cfg(feature = "rayon-threads")]
@@ -1625,15 +1798,13 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvByteDiffBuilder::new()
-            .rayon_thread_pool(&rayon::ThreadPoolBuilder::new().build()?)
+        let thread_pool = &rayon::ThreadPoolBuilder::new().build()?;
+        let csv_diff = CsvByteDiffLocalBuilder::new()
+            .rayon_thread_pool(&thread_pool)
             .primary_key_columns(vec![0, 1])
-            .build()?
-            .diff(
-                Csv::new(Cursor::new(csv_left.as_bytes())),
-                Csv::new(Cursor::new(csv_right.as_bytes())),
-            )?;
-        let mut diff_res_expected = DiffByteRecords(vec![
+            .build()?;
+
+        let expected = DiffByteRecords(vec![
             DiffByteRecord::Modify {
                 delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
                 add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
@@ -1649,15 +1820,15 @@ mod tests {
             )),
         ]);
 
-        diff_res_actual.sort_by_line();
-        diff_res_expected.sort_by_line();
-        assert_eq!(diff_res_actual, diff_res_expected);
-        Ok(())
+        csv_diff_local_with_sorting(csv_left, csv_right, expected, csv_diff)
+
+        // TODO: also create a builder for `CsvByteDiff`, so that we can test the following
+        // csv_diff_with_sorting(csv_left, csv_right, expected, csv_diff)?
     }
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_error_left_has_different_num_of_fields(
+    fn diff_local_one_line_with_header_error_left_has_different_num_of_fields(
     ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3,header4\n\
@@ -1666,9 +1837,9 @@ mod tests {
                         header1,header2,header3\n\
                         a,b,d";
 
-        let diff_res_actual = CsvByteDiff::new()?.diff(
-            Csv::new(Cursor::new(csv_left.as_bytes())),
-            Csv::new(Cursor::new(csv_right.as_bytes())),
+        let diff_res_actual = CsvByteDiffLocal::new()?.diff(
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         );
 
         let err_kind = diff_res_actual.map_err(|err| err.into_kind());
@@ -1691,7 +1862,77 @@ mod tests {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_error_right_has_different_num_of_fields(
+    fn diff_streaming_one_line_with_header_error_left_has_different_num_of_fields(
+    ) -> Result<(), Box<dyn Error>> {
+        let csv_left = "\
+                        header1,header2,header3,header4\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,d";
+
+        let diff_res_actual = CsvByteDiff::new()?.diff(
+            Csv::with_reader(csv_left.as_bytes()),
+            Csv::with_reader(csv_right.as_bytes()),
+        );
+
+        let diff_res_vec: csv::Result<Vec<_>> = diff_res_actual.collect();
+
+        let err_kind = diff_res_vec.map_err(|err| err.into_kind());
+        let mut pos_expected = csv::Position::new();
+        let pos_expected = pos_expected.set_byte(32).set_line(2).set_record(1);
+        match err_kind {
+            Err(csv::ErrorKind::UnequalLengths {
+                pos: Some(pos),
+                expected_len,
+                len,
+            }) => {
+                assert_eq!(pos, *pos_expected);
+                assert_eq!(expected_len, 4);
+                assert_eq!(len, 3);
+            }
+            res => panic!("match mismatch: got {:#?}", res),
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_local_one_line_with_header_error_right_has_different_num_of_fields(
+    ) -> Result<(), Box<dyn Error>> {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3,header4\n\
+                        a,b,d";
+
+        let diff_res_actual = CsvByteDiffLocal::new()?.diff(
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
+        );
+
+        let err_kind = diff_res_actual.map_err(|err| err.into_kind());
+        let mut pos_expected = csv::Position::new();
+        let pos_expected = pos_expected.set_byte(32).set_line(2).set_record(1);
+        match err_kind {
+            Err(csv::ErrorKind::UnequalLengths {
+                pos: Some(pos),
+                expected_len,
+                len,
+            }) => {
+                assert_eq!(pos, *pos_expected);
+                assert_eq!(expected_len, 4);
+                assert_eq!(len, 3);
+            }
+            res => panic!("match mismatch: got {:#?}", res),
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_streaming_one_line_with_header_error_right_has_different_num_of_fields(
     ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1701,11 +1942,13 @@ mod tests {
                         a,b,d";
 
         let diff_res_actual = CsvByteDiff::new()?.diff(
-            Csv::new(Cursor::new(csv_left.as_bytes())),
-            Csv::new(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         );
 
-        let err_kind = diff_res_actual.map_err(|err| err.into_kind());
+        let diff_res_vec: csv::Result<Vec<_>> = diff_res_actual.collect();
+
+        let err_kind = diff_res_vec.map_err(|err| err.into_kind());
         let mut pos_expected = csv::Position::new();
         let pos_expected = pos_expected.set_byte(32).set_line(2).set_record(1);
         match err_kind {
@@ -1725,9 +1968,8 @@ mod tests {
 
     #[cfg(feature = "crossbeam-threads")]
     #[test]
-    // TODO: this is our only test for the "crossbeam-threads" feature;
-    // we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-threads"
-    fn diff_multiple_lines_with_header_combined_key_added_deleted_modified(
+    // TODO: we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-threads"
+    fn diff_crossbeam_multiple_lines_with_header_combined_key_added_deleted_modified(
     ) -> Result<(), CsvByteDiffBuilderError> {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1742,14 +1984,14 @@ mod tests {
                         d,f,f\n\
                         m,n,o";
 
-        let mut diff_res_actual = CsvByteDiffBuilder::<CsvHashTaskSpawnerCrossbeam>::new(
-            CsvHashTaskSpawnerBuilderCrossbeam::new(),
+        let mut diff_res_actual = CsvByteDiffLocalBuilder::<CsvHashTaskSpawnerLocalCrossbeam>::new(
+            CsvHashTaskSpawnerLocalBuilderCrossbeam::new(),
         )
         .primary_key_columns(vec![0, 1])
         .build()?
         .diff(
-            Csv::new(Cursor::new(csv_left.as_bytes())),
-            Csv::new(Cursor::new(csv_right.as_bytes())),
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
         )
         .unwrap();
         let mut diff_res_expected = DiffByteRecords(vec![
@@ -1768,9 +2010,66 @@ mod tests {
             )),
         ]);
 
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "rayon-threads"))]
+    #[test]
+    // TODO: we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-threads"
+    fn diff_streaming_std_threads_multiple_lines_with_header_combined_key_added_deleted_modified(
+    ) -> Result<(), Box<dyn Error>> {
+        use crate::csv_hash_task_spawner::{
+            CsvHashTaskSpawnerBuilderStdThreads, CsvHashTaskSpawnerStdThreads,
+        };
+
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        g,h,i\n\
+                        m,n,o";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,x\n\
+                        g,h,i\n\
+                        d,f,f\n\
+                        m,n,o";
+
+        let diff_res_iter = CsvByteDiffBuilder::<CsvHashTaskSpawnerStdThreads>::new(
+            CsvHashTaskSpawnerBuilderStdThreads::new(),
+        )
+        .primary_key_columns(vec![0, 1])
+        .build()?
+        .diff(
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
+        );
+
+        let diff_res_iter: csv::Result<Vec<_>> = diff_res_iter.collect();
+        let mut diff_res_actual: DiffByteRecords = DiffByteRecords(diff_res_iter?);
+
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
+                field_indices: vec![2],
+            },
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "f", "f"]),
+                4,
+            )),
+        ]);
+
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 }

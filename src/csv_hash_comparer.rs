@@ -1,13 +1,12 @@
 use crate::csv_parse_result::CsvLeftRightParseResult;
+use crate::csv_parse_result::RecordHash;
+use crate::csv_parse_result::RecordHashWithPosition;
 use crate::csv_parser_hasher::HashMapValue;
-use crate::csv_parser_hasher::StackVec;
 use crate::diff_result::*;
 use crate::diff_row::*;
 use ahash::AHashMap as HashMap;
 use std::io::Read;
 use std::io::Seek;
-
-type CsvHashValueMap = HashMap<u128, HashMapValue>;
 
 pub(crate) struct CsvHashComparer<R: Read + Seek> {
     csv_records_left_map: CsvHashValueMap,
@@ -45,14 +44,16 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
 
     pub fn compare_csv_left_right_parse_result(
         &mut self,
-        csv_left_right_parse_results: impl IntoIterator<Item = StackVec<CsvLeftRightParseResult>>,
+        csv_left_right_parse_results: impl IntoIterator<
+            Item = CsvLeftRightParseResult<RecordHashWithPosition>,
+        >,
     ) -> csv::Result<DiffByteRecords> {
-        for csv_left_right_parse_result in csv_left_right_parse_results.into_iter().flatten() {
+        for csv_left_right_parse_result in csv_left_right_parse_results.into_iter() {
             match csv_left_right_parse_result {
                 CsvLeftRightParseResult::Left(left_record_res) => {
                     let pos_left = left_record_res.pos;
-                    let key = left_record_res.key;
-                    let record_hash_left = left_record_res.record_hash;
+                    let key = left_record_res.key();
+                    let record_hash_left = left_record_res.record_hash_num();
                     match self.csv_records_right_map.get_mut(&key) {
                         Some(hash_map_val) => {
                             if let HashMapValue::Initial(ref record_hash_right, ref pos_right) =
@@ -61,7 +62,10 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                 if record_hash_left != *record_hash_right {
                                     *hash_map_val = HashMapValue::Modified(pos_left, *pos_right);
                                 } else {
-                                    *hash_map_val = HashMapValue::Equal;
+                                    *hash_map_val = HashMapValue::Equal(
+                                        left_record_res.record_hash,
+                                        RecordHash::new(key, *record_hash_right),
+                                    );
                                 }
                             }
                         }
@@ -73,12 +77,9 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                     if self.max_capacity_right_map > 0
                         && pos_left.line % self.max_capacity_right_map as u64 == 0
                     {
-                        // in order to circumvent borrowing issues in closure
-                        let mut csv_records_right_map =
-                            std::mem::take(&mut self.csv_records_right_map);
-                        csv_records_right_map.drain().for_each(|(k, v)| {
+                        for (k, v) in self.csv_records_right_map.drain() {
                             match v {
-                                HashMapValue::Equal => {
+                                HashMapValue::Equal(..) => {
                                     // nothing to do - will be removed
                                 }
                                 HashMapValue::Initial(_hash, _pos) => {
@@ -128,8 +129,8 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                     });
                                 }
                             }
-                        });
-                        self.csv_records_right_map = csv_records_right_map;
+                        }
+
                         std::mem::swap(
                             &mut self.intermediate_right_map,
                             &mut self.csv_records_right_map,
@@ -138,8 +139,8 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                 }
                 CsvLeftRightParseResult::Right(right_record_res) => {
                     let pos_right = right_record_res.pos;
-                    let key = right_record_res.key;
-                    let record_hash_right = right_record_res.record_hash;
+                    let key = right_record_res.key();
+                    let record_hash_right = right_record_res.record_hash_num();
                     match self.csv_records_left_map.get_mut(&key) {
                         Some(hash_map_val) => {
                             if let HashMapValue::Initial(ref record_hash_left, ref pos_left) =
@@ -148,7 +149,10 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                 if *record_hash_left != record_hash_right {
                                     *hash_map_val = HashMapValue::Modified(*pos_left, pos_right);
                                 } else {
-                                    *hash_map_val = HashMapValue::Equal;
+                                    *hash_map_val = HashMapValue::Equal(
+                                        RecordHash::new(key, *record_hash_left),
+                                        right_record_res.record_hash,
+                                    );
                                 }
                             }
                         }
@@ -160,12 +164,9 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                     if self.max_capacity_left_map > 0
                         && pos_right.line % self.max_capacity_left_map as u64 == 0
                     {
-                        // in order to circumvent borrowing issues in closure
-                        let mut csv_records_left_map =
-                            std::mem::take(&mut self.csv_records_left_map);
-                        csv_records_left_map.drain().for_each(|(k, v)| {
+                        for (k, v) in self.csv_records_left_map.drain() {
                             match v {
-                                HashMapValue::Equal => {
+                                HashMapValue::Equal(..) => {
                                     // nothing to do - will be removed
                                 }
                                 HashMapValue::Initial(_hash, _pos) => {
@@ -215,8 +216,7 @@ impl<R: Read + std::io::Seek> CsvHashComparer<R> {
                                     });
                                 }
                             }
-                        });
-                        self.csv_records_left_map = csv_records_left_map;
+                        }
                         std::mem::swap(
                             &mut self.intermediate_left_map,
                             &mut self.csv_records_left_map,

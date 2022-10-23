@@ -33,7 +33,7 @@ This crate is still in it's infancy. There will be breaking changes (and dragons
 
 ## Highlights ✨
 - fastest CSV-diffing library in the world🚀
-    - compare two CSVs with 1,000,000 rows x 9 columns in __under 500ms__
+    - compare two CSVs with 1,000,000 rows x 9 columns in __under 600ms__
 - thread-pool agnostic 🧵🧶
     - use your existing thread-pool (e.g. [rayon][rayon]) or use threads directly (via [crossbeam][crossbeam-scope]); configurable via [Cargo features](#getting-started)
     - _caveat: thread-spawning must support [scoped threads][crossbeam-scope]_
@@ -44,7 +44,7 @@ This crate is still in it's infancy. There will be breaking changes (and dragons
 ## Example
 ```rust
 use std::io::Cursor;
-use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
+use csv_diff::{csv_diff::CsvByteDiffLocal, csv::Csv};
 use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         1,lemon,fruit\n\
                         2,strawberry,nut";
 
-    let csv_byte_diff = CsvByteDiff::new()?;
+    let csv_byte_diff = CsvByteDiffLocal::new()?;
 
     let mut diff_byte_records = csv_byte_diff.diff(
         Csv::new(csv_data_left.as_bytes()),
