@@ -184,7 +184,7 @@ impl MaxCapacityThreshold {
 }
 
 pub struct DiffByteRecordsIterator {
-    buf: VecDeque<DiffByteRecord>,
+    buf: VecDeque<csv::Result<DiffByteRecord>>,
     csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
     csv_records_left_map: CsvByteRecordValueMap,
     csv_records_left_map_iter: Option<IntoIter<u128, HashMapValue<csv::ByteRecord>>>,
@@ -219,7 +219,7 @@ impl DiffByteRecordsIterator {
 }
 
 impl Iterator for DiffByteRecordsIterator {
-    type Item = DiffByteRecord;
+    type Item = csv::Result<DiffByteRecord>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if !self.buf.is_empty() {
@@ -227,9 +227,10 @@ impl Iterator for DiffByteRecordsIterator {
         }
         while let Ok(csv_left_right_parse_result) = self.csv_left_right_parse_results.recv() {
             match csv_left_right_parse_result {
-                CsvLeftRightParseResult::Left(left_record_res) => {
-                    let record_hash_left = left_record_res.record_hash;
-                    let byte_record_left = left_record_res.byte_record;
+                CsvLeftRightParseResult::Left(CsvByteRecordWithHash {
+                    byte_record: Ok(byte_record_left),
+                    record_hash: record_hash_left,
+                }) => {
                     let byte_record_left_line =
                         // TODO: the closure _might_ be a performance bottleneck!?
                         byte_record_left.position().map_or(0, |pos| pos.line());
@@ -303,7 +304,7 @@ impl Iterator for DiffByteRecordsIterator {
                                         // TODO: handle error (although it shouldn't error here)
                                         .expect("a record position")
                                         .line();
-                                    self.buf.push_back(DiffByteRecord::Modify {
+                                    self.buf.push_back(Ok(DiffByteRecord::Modify {
                                         add: ByteRecordLineInfo::new(
                                             right_byte_record,
                                             right_byte_record_line,
@@ -313,7 +314,7 @@ impl Iterator for DiffByteRecordsIterator {
                                             left_byte_record_line,
                                         ),
                                         field_indices: fields_modified,
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -326,9 +327,17 @@ impl Iterator for DiffByteRecordsIterator {
                         }
                     }
                 }
-                CsvLeftRightParseResult::Right(right_record_res) => {
-                    let record_hash_right = right_record_res.record_hash;
-                    let byte_record_right = right_record_res.byte_record;
+                CsvLeftRightParseResult::Left(CsvByteRecordWithHash {
+                    byte_record: Err(byte_record_left_err),
+                    ..
+                }) => {
+                    self.buf.push_back(Err(byte_record_left_err));
+                    break;
+                }
+                CsvLeftRightParseResult::Right(CsvByteRecordWithHash {
+                    byte_record: Ok(byte_record_right),
+                    record_hash: record_hash_right,
+                }) => {
                     // TODO: the closure _might_ be a performance bottleneck!?
                     let byte_record_right_line =
                         byte_record_right.position().map_or(0, |pos| pos.line());
@@ -400,7 +409,7 @@ impl Iterator for DiffByteRecordsIterator {
                                         .position()
                                         .expect("a record position")
                                         .line();
-                                    self.buf.push_back(DiffByteRecord::Modify {
+                                    self.buf.push_back(Ok(DiffByteRecord::Modify {
                                         add: ByteRecordLineInfo::new(
                                             right_byte_record,
                                             right_byte_record_line,
@@ -410,7 +419,7 @@ impl Iterator for DiffByteRecordsIterator {
                                             left_byte_record_line,
                                         ),
                                         field_indices: fields_modified,
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -422,6 +431,13 @@ impl Iterator for DiffByteRecordsIterator {
                             break;
                         }
                     }
+                }
+                CsvLeftRightParseResult::Right(CsvByteRecordWithHash {
+                    byte_record: Err(e),
+                    ..
+                }) => {
+                    self.buf.push_back(Err(e));
+                    break;
                 }
             }
         }
@@ -439,10 +455,10 @@ impl Iterator for DiffByteRecordsIterator {
         match iter_left_map.next() {
             Some((_, HashMapValue::Initial(_hash, byte_record))) => {
                 let line = byte_record.position().expect("a record position").line();
-                return Some(DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                return Some(Ok(DiffByteRecord::Delete(ByteRecordLineInfo::new(
                     byte_record,
                     line,
-                )));
+                ))));
             }
             Some((_, HashMapValue::Modified(left_byte_record, right_byte_record))) => {
                 let fields_modified = left_byte_record
@@ -463,11 +479,11 @@ impl Iterator for DiffByteRecordsIterator {
                     .position()
                     .expect("a record position")
                     .line();
-                return Some(DiffByteRecord::Modify {
+                return Some(Ok(DiffByteRecord::Modify {
                     add: ByteRecordLineInfo::new(right_byte_record, right_byte_record_line),
                     delete: ByteRecordLineInfo::new(left_byte_record, left_byte_record_line),
                     field_indices: fields_modified,
-                });
+                }));
             }
             _ => (),
         }
@@ -481,10 +497,10 @@ impl Iterator for DiffByteRecordsIterator {
         match iter_right_map.next() {
             Some((_, HashMapValue::Initial(_hash, byte_record))) => {
                 let line = byte_record.position().expect("a record position").line();
-                return Some(DiffByteRecord::Add(ByteRecordLineInfo::new(
+                return Some(Ok(DiffByteRecord::Add(ByteRecordLineInfo::new(
                     byte_record,
                     line,
-                )));
+                ))));
             }
             Some((_, HashMapValue::Modified(left_byte_record, right_byte_record))) => {
                 let fields_modified = left_byte_record
@@ -505,11 +521,11 @@ impl Iterator for DiffByteRecordsIterator {
                     .position()
                     .expect("a record position")
                     .line();
-                return Some(DiffByteRecord::Modify {
+                return Some(Ok(DiffByteRecord::Modify {
                     add: ByteRecordLineInfo::new(right_byte_record, right_byte_record_line),
                     delete: ByteRecordLineInfo::new(left_byte_record, left_byte_record_line),
                     field_indices: fields_modified,
-                });
+                }));
             }
             _ => (),
         }

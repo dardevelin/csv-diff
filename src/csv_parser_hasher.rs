@@ -141,84 +141,111 @@ impl CsvParserHasherSender<CsvLeftRightParseResult<CsvByteRecordWithHash>> {
         csv: Csv<R>,
         primary_key_columns: &HashSet<usize>,
         receiver_csv_recycle: Receiver<csv::ByteRecord>,
-    ) -> csv::Result<()> {
+    ) {
         let mut csv_reader: Reader<R> = csv.into();
         let mut csv_record = csv::ByteRecord::new();
         // read first record in order to get the number of fields
-        if csv_reader.read_byte_record(&mut csv_record)? {
-            let csv_record_right_first = std::mem::take(&mut csv_record);
-            let fields_as_key: Vec<_> = primary_key_columns.iter().collect();
-            // TODO: maybe use this in order to only hash fields that are values and not act
-            // as primary keys. We should probably only do this, if primary key field indices are
-            // contiguous, because otherwise we will have multiple calls to our hashing function,
-            // which could hurt performance.
-            // let num_of_fields = csv_record_right_first.len();
-            // let fields_as_value: Vec<_> = (0..num_of_fields)
-            //     .filter(|x| !primary_key_columns.contains(x))
-            //     .collect();
+        match csv_reader.read_byte_record(&mut csv_record) {
+            Ok(true) => {
+                let record = std::mem::take(&mut csv_record);
+                let fields_as_key: Vec<_> = primary_key_columns.iter().copied().collect();
+                // TODO: maybe use this in order to only hash fields that are values and not act
+                // as primary keys. We should probably only do this, if primary key field indices are
+                // contiguous, because otherwise we will have multiple calls to our hashing function,
+                // which could hurt performance.
+                // let num_of_fields = record.len();
+                // let fields_as_value: Vec<_> = (0..num_of_fields)
+                //     .filter(|x| !primary_key_columns.contains(x))
+                //     .collect();
 
-            let mut hasher = Xxh3::new();
-            let record = csv_record_right_first;
-            let key_fields: Vec<_> = fields_as_key
-                .iter()
-                .filter_map(|k_idx| record.get(**k_idx))
-                .collect();
-            if !key_fields.is_empty() {
-                // TODO: try to do it with as few calls to `write` as possible (see below)
-                for key_field in key_fields {
-                    hasher.write(key_field);
-                }
-                let key = hasher.digest128();
-                // TODO: don't hash all of it -> exclude the key fields (see below)
-                let hash_record = xxh3_128(record.as_slice());
-                self.sender
-                    .send(
+                let mut hasher = Xxh3::new();
+                let mut key_fields_iter = fields_as_key
+                    .iter()
+                    .filter_map(|k_idx| record.get(*k_idx))
+                    .peekable();
+                if key_fields_iter.peek().is_some() {
+                    // TODO: try to do it with as few calls to `write` as possible (see below)
+                    for key_field in key_fields_iter {
+                        hasher.write(key_field);
+                    }
+                    let key = hasher.digest128();
+                    // TODO: don't hash all of it -> exclude the key fields (see below)
+                    let hash_record = xxh3_128(record.as_slice());
+                    // we ignore any sending errors
+                    let _ = self.sender.send(
                         T::new(CsvByteRecordWithHash::new(
-                            record,
+                            Ok(record),
                             RecordHash::new(key, hash_record),
                         ))
                         .into_payload(),
-                    )
-                    .unwrap();
+                    );
 
-                loop {
-                    let mut csv_record = receiver_csv_recycle
-                        .try_recv()
-                        .unwrap_or_else(|_| csv::ByteRecord::new());
+                    loop {
+                        let mut csv_record = receiver_csv_recycle
+                            .try_recv()
+                            .unwrap_or_else(|_| csv::ByteRecord::new());
 
-                    if csv_reader.read_byte_record(&mut csv_record)? {
-                        hasher.reset();
-                        let key_fields = fields_as_key
-                            .iter()
-                            .filter_map(|k_idx| csv_record.get(**k_idx));
-                        // TODO: try to do it with as few calls to `write` as possible (see below)
-                        for key_field in key_fields {
-                            hasher.write(key_field);
+                        match csv_reader.read_byte_record(&mut csv_record) {
+                            Ok(true) => {
+                                hasher.reset();
+                                let key_fields = fields_as_key
+                                    .iter()
+                                    .filter_map(|k_idx| csv_record.get(*k_idx));
+                                // TODO: try to do it with as few calls to `write` as possible (see below)
+                                for key_field in key_fields {
+                                    hasher.write(key_field);
+                                }
+                                let key = hasher.digest128();
+                                // TODO: don't hash all of it -> exclude the key fields
+                                // in order to still be efficient and do as few `write` calls as possible
+                                // consider using `csv_record.range(...)` method
+                                let hash_record = xxh3_128(csv_record.as_slice());
+                                if self
+                                    .sender
+                                    .send(
+                                        T::new(CsvByteRecordWithHash::new(
+                                            Ok(csv_record),
+                                            RecordHash::new(key, hash_record),
+                                        ))
+                                        .into_payload(),
+                                    )
+                                    .is_err()
+                                {
+                                    // when the receiver is gone, it doesn't make sense to continue here
+                                    break;
+                                }
+                            }
+                            Ok(false) => break,
+                            Err(e) => {
+                                if self
+                                    .sender
+                                    .send(
+                                        T::new(CsvByteRecordWithHash::new(
+                                            Err(e),
+                                            RecordHash::new(0, 0),
+                                        ))
+                                        .into_payload(),
+                                    )
+                                    .is_err()
+                                {
+                                    // when the receiver is gone, it doesn't make sense to continue here
+                                    break;
+                                }
+                                break;
+                            }
                         }
-                        let key = hasher.digest128();
-                        // TODO: don't hash all of it -> exclude the key fields
-                        // in order to still be efficient and do as few `write` calls as possible
-                        // consider using `csv_record.range(...)` method
-                        let hash_record = xxh3_128(csv_record.as_slice());
-                        {
-                            let pos = csv_record.position().expect("a record position");
-                            self.sender
-                                .send(
-                                    T::new(CsvByteRecordWithHash::new(
-                                        csv_record,
-                                        RecordHash::new(key, hash_record),
-                                    ))
-                                    .into_payload(),
-                                )
-                                .unwrap();
-                        }
-                    } else {
-                        break;
                     }
                 }
             }
+            Ok(false) => { /* Do nothing, we have reached EOF */ }
+            Err(e) => self
+                .sender
+                .send(
+                    T::new(CsvByteRecordWithHash::new(Err(e), RecordHash::new(0, 0)))
+                        .into_payload(),
+                )
+                .unwrap(),
         }
-        Ok(())
     }
 }
 

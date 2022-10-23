@@ -55,13 +55,13 @@ impl RecordHashWithPosition {
 }
 
 pub struct CsvByteRecordWithHash {
-    pub(crate) byte_record: csv::ByteRecord,
+    pub(crate) byte_record: csv::Result<csv::ByteRecord>,
     pub(crate) record_hash: RecordHash,
 }
 
 impl CsvByteRecordWithHash {
     #[inline]
-    pub(crate) fn new(byte_record: csv::ByteRecord, record_hash: RecordHash) -> Self {
+    pub(crate) fn new(byte_record: csv::Result<csv::ByteRecord>, record_hash: RecordHash) -> Self {
         Self {
             byte_record,
             record_hash,

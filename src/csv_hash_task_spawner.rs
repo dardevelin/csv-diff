@@ -20,7 +20,7 @@ use crate::{
     csv_hash_receiver_comparer::CsvHashReceiverStreamComparer,
     csv_parse_result::{CsvByteRecordWithHash, RecordHashWithPosition},
     csv_parser_hasher::{CsvParserHasherLinesSender, CsvParserHasherSender},
-    diff_result::{DiffByteRecords, DiffByteRecordsIterator},
+    diff_result::DiffByteRecordsIterator,
     thread_scope_strategy::ThreadScoper,
 };
 
@@ -83,8 +83,7 @@ pub trait CsvHashTaskSpawner {
     fn parse_hash_and_send_for_compare<R, P>(
         csv_hash_task_sender: CsvHashTaskSenderWithRecycleReceiver<R>,
         primary_key_columns: HashSet<usize>,
-    ) -> csv::Result<()>
-    where
+    ) where
         R: Read + Send,
         P: CsvParseResult<CsvLeftRightParseResult<CsvByteRecordWithHash>, CsvByteRecordWithHash>,
     {

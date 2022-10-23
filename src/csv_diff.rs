@@ -590,7 +590,9 @@ mod tests {
             Csv::with_reader(csv_right.as_bytes()),
         );
 
-        let mut actual = DiffByteRecords(diff_iter.collect());
+        let diff_byte_records: csv::Result<Vec<DiffByteRecord>> = diff_iter.collect();
+        let diff_byte_records = diff_byte_records?;
+        let mut actual = DiffByteRecords(diff_byte_records);
         actual.sort_by_line();
         expected.sort_by_line();
 
@@ -1826,7 +1828,7 @@ mod tests {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_error_left_has_different_num_of_fields(
+    fn diff_local_one_line_with_header_error_left_has_different_num_of_fields(
     ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3,header4\n\
@@ -1860,7 +1862,43 @@ mod tests {
 
     #[cfg(feature = "rayon-threads")]
     #[test]
-    fn diff_one_line_with_header_error_right_has_different_num_of_fields(
+    fn diff_streaming_one_line_with_header_error_left_has_different_num_of_fields(
+    ) -> Result<(), Box<dyn Error>> {
+        let csv_left = "\
+                        header1,header2,header3,header4\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,d";
+
+        let diff_res_actual = CsvByteDiff::new()?.diff(
+            Csv::with_reader(csv_left.as_bytes()),
+            Csv::with_reader(csv_right.as_bytes()),
+        );
+
+        let diff_res_vec: csv::Result<Vec<_>> = diff_res_actual.collect();
+
+        let err_kind = diff_res_vec.map_err(|err| err.into_kind());
+        let mut pos_expected = csv::Position::new();
+        let pos_expected = pos_expected.set_byte(32).set_line(2).set_record(1);
+        match err_kind {
+            Err(csv::ErrorKind::UnequalLengths {
+                pos: Some(pos),
+                expected_len,
+                len,
+            }) => {
+                assert_eq!(pos, *pos_expected);
+                assert_eq!(expected_len, 4);
+                assert_eq!(len, 3);
+            }
+            res => panic!("match mismatch: got {:#?}", res),
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_local_one_line_with_header_error_right_has_different_num_of_fields(
     ) -> Result<(), Box<dyn Error>> {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1892,11 +1930,46 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn diff_streaming_one_line_with_header_error_right_has_different_num_of_fields(
+    ) -> Result<(), Box<dyn Error>> {
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3,header4\n\
+                        a,b,d";
+
+        let diff_res_actual = CsvByteDiff::new()?.diff(
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
+        );
+
+        let diff_res_vec: csv::Result<Vec<_>> = diff_res_actual.collect();
+
+        let err_kind = diff_res_vec.map_err(|err| err.into_kind());
+        let mut pos_expected = csv::Position::new();
+        let pos_expected = pos_expected.set_byte(32).set_line(2).set_record(1);
+        match err_kind {
+            Err(csv::ErrorKind::UnequalLengths {
+                pos: Some(pos),
+                expected_len,
+                len,
+            }) => {
+                assert_eq!(pos, *pos_expected);
+                assert_eq!(expected_len, 4);
+                assert_eq!(len, 3);
+            }
+            res => panic!("match mismatch: got {:#?}", res),
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "crossbeam-threads")]
     #[test]
-    // TODO: this is our only test for the "crossbeam-threads" feature;
-    // we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-threads"
-    fn diff_multiple_lines_with_header_combined_key_added_deleted_modified(
+    // TODO: we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-threads"
+    fn diff_crossbeam_multiple_lines_with_header_combined_key_added_deleted_modified(
     ) -> Result<(), CsvByteDiffBuilderError> {
         let csv_left = "\
                         header1,header2,header3\n\
@@ -1937,9 +2010,66 @@ mod tests {
             )),
         ]);
 
-        let diff_actual = diff_res_actual.sort_by_line();
-        let diff_expected = diff_res_expected.sort_by_line();
-        assert_eq!(diff_actual, diff_expected);
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "rayon-threads"))]
+    #[test]
+    // TODO: we should write a macro, so that we can reuse test code for both "rayon" and "crossbeam-threads"
+    fn diff_streaming_std_threads_multiple_lines_with_header_combined_key_added_deleted_modified(
+    ) -> Result<(), Box<dyn Error>> {
+        use crate::csv_hash_task_spawner::{
+            CsvHashTaskSpawnerBuilderStdThreads, CsvHashTaskSpawnerStdThreads,
+        };
+
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c\n\
+                        d,e,f\n\
+                        g,h,i\n\
+                        m,n,o";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,x\n\
+                        g,h,i\n\
+                        d,f,f\n\
+                        m,n,o";
+
+        let diff_res_iter = CsvByteDiffBuilder::<CsvHashTaskSpawnerStdThreads>::new(
+            CsvHashTaskSpawnerBuilderStdThreads::new(),
+        )
+        .primary_key_columns(vec![0, 1])
+        .build()?
+        .diff(
+            Csv::with_reader_seek(csv_left.as_bytes()),
+            Csv::with_reader_seek(csv_right.as_bytes()),
+        );
+
+        let diff_res_iter: csv::Result<Vec<_>> = diff_res_iter.collect();
+        let mut diff_res_actual: DiffByteRecords = DiffByteRecords(diff_res_iter?);
+
+        let mut diff_res_expected = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "x"]), 2),
+                field_indices: vec![2],
+            },
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "f", "f"]),
+                4,
+            )),
+        ]);
+
+        diff_res_actual.sort_by_line();
+        diff_res_expected.sort_by_line();
+        assert_eq!(diff_res_actual, diff_res_expected);
         Ok(())
     }
 }
