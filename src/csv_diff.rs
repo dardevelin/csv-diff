@@ -25,6 +25,7 @@ use csv::Reader;
 use std::cell::RefCell;
 use std::io::{Read, Seek};
 use std::marker::PhantomData;
+use std::sync::Arc;
 use std::{collections::HashSet, iter::Iterator};
 use thiserror::Error;
 
@@ -36,7 +37,7 @@ pub struct CsvByteDiff<T: CsvHashTaskSpawner> {
 }
 
 #[cfg(feature = "rayon-threads")]
-impl CsvByteDiff<CsvHashTaskSpawnerRayon<'static>> {
+impl CsvByteDiff<CsvHashTaskSpawnerRayon> {
     pub fn new() -> Result<Self, CsvDiffNewError> {
         let mut instance = Self {
             primary_key_columns: HashSet::new(),
@@ -96,7 +97,7 @@ where
 pub struct CsvByteDiffBuilder<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
     #[cfg(feature = "rayon-threads")]
-    hash_task_spawner: Option<CsvHashTaskSpawnerRayon<'static>>,
+    hash_task_spawner: Option<CsvHashTaskSpawnerRayon>,
     #[cfg(feature = "rayon-threads")]
     _phantom: PhantomData<T>,
     #[cfg(not(feature = "rayon-threads"))]
@@ -137,7 +138,7 @@ where
 }
 
 #[cfg(feature = "rayon-threads")]
-impl<'tp> CsvByteDiffBuilder<CsvHashTaskSpawnerRayon<'static>> {
+impl CsvByteDiffBuilder<CsvHashTaskSpawnerRayon> {
     pub fn new() -> Self {
         Self {
             primary_key_columns: std::iter::once(0).collect(),
@@ -146,15 +147,13 @@ impl<'tp> CsvByteDiffBuilder<CsvHashTaskSpawnerRayon<'static>> {
         }
     }
 
-    pub fn rayon_thread_pool(mut self, thread_pool: &'static rayon::ThreadPool) -> Self {
-        self.hash_task_spawner = Some(CsvHashTaskSpawnerRayon::with_thread_pool_ref(thread_pool));
+    pub fn rayon_thread_pool(mut self, thread_pool: Arc<rayon::ThreadPool>) -> Self {
+        self.hash_task_spawner = Some(CsvHashTaskSpawnerRayon::with_thread_pool_arc(thread_pool));
         self
     }
 
     #[cfg(feature = "rayon-threads")]
-    pub fn build(
-        self,
-    ) -> Result<CsvByteDiff<CsvHashTaskSpawnerRayon<'static>>, CsvByteDiffBuilderError> {
+    pub fn build(self) -> Result<CsvByteDiff<CsvHashTaskSpawnerRayon>, CsvByteDiffBuilderError> {
         if !self.primary_key_columns.is_empty() {
             Ok(CsvByteDiff {
                 primary_key_columns: self.primary_key_columns,

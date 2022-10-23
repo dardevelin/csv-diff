@@ -1,6 +1,8 @@
 use std::{
     collections::HashSet,
     io::{Read, Seek},
+    ops::Deref,
+    sync::Arc,
 };
 
 use crossbeam_channel::{bounded, Receiver, Sender};
@@ -100,27 +102,44 @@ pub trait CsvHashTaskSpawner {
 
 #[derive(Debug)]
 #[cfg(feature = "rayon-threads")]
-pub struct CsvHashTaskSpawnerRayon<'tp> {
-    thread_pool: Mown<'tp, rayon::ThreadPool>,
+pub struct CsvHashTaskSpawnerRayon {
+    thread_pool: OwnOrArc<rayon::ThreadPool>,
+}
+
+#[derive(Debug)]
+enum OwnOrArc<T> {
+    Arced(Arc<T>),
+    Owned(T),
+}
+
+impl<T> Deref for OwnOrArc<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Arced(t) => &*t,
+            Self::Owned(t) => t,
+        }
+    }
 }
 
 #[cfg(feature = "rayon-threads")]
-impl<'tp> CsvHashTaskSpawnerRayon<'tp> {
-    pub fn with_thread_pool_ref(thread_pool: &'tp rayon::ThreadPool) -> Self {
+impl CsvHashTaskSpawnerRayon {
+    pub fn with_thread_pool_arc(thread_pool: Arc<rayon::ThreadPool>) -> Self {
         Self {
-            thread_pool: Mown::Borrowed(thread_pool),
+            thread_pool: OwnOrArc::Arced(thread_pool),
         }
     }
 
     pub fn with_thread_pool_owned(thread_pool: rayon::ThreadPool) -> Self {
         Self {
-            thread_pool: Mown::Owned(thread_pool),
+            thread_pool: OwnOrArc::Owned(thread_pool),
         }
     }
 }
 
 #[cfg(feature = "rayon-threads")]
-impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon<'static> {
+impl CsvHashTaskSpawner for CsvHashTaskSpawnerRayon {
     fn spawn_hashing_tasks_and_send_result<R: Read + Send + 'static>(
         self,
         csv_hash_task_sender_left: CsvHashTaskSenderWithRecycleReceiver<R>,
