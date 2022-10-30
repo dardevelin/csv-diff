@@ -18,7 +18,7 @@ maintenance = { status = "experimental" }
 [dependencies]
 csv = "1.1"
 rayon = { version = "1.5", optional = true }
-ahash = "0.6.2"
+ahash = "0.8.0"
 xxhash-rust = {version = "0.8.3", features = ["xxh3"]}
 crossbeam-channel = "0.5"
 crossbeam-utils = { version = "0.8.3", optional = true }
