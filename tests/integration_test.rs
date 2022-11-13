@@ -5,8 +5,12 @@ mod integration_test {
     use csv_diff::csv_hash_task_spawner::{
         CsvHashTaskSpawnerBuilderStdThreads, CsvHashTaskSpawnerStdThreads,
     };
+    #[cfg(not(feature = "rayon-threads"))]
+    use csv_diff::diff_result::DiffByteRecords;
     use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
     use pretty_assertions::assert_eq;
+    #[cfg(not(feature = "rayon-threads"))]
+    use std::convert::TryInto;
     use std::{error::Error, io::Cursor};
 
     #[cfg(feature = "rayon-threads")]
@@ -359,6 +363,42 @@ mod integration_test {
         }];
 
         assert_eq!(diff_rows_actual, diff_rows_expected);
+
+        Ok(())
+    }
+
+    #[cfg(not(feature = "rayon-threads"))]
+    #[test]
+    fn streaming_create_instance_with_builder_std_threads_and_diff_and_try_into(
+    ) -> Result<(), Box<dyn Error>> {
+        let csv_byte_diff =
+            csv_diff::csv_diff::CsvByteDiffBuilder::<CsvHashTaskSpawnerStdThreads>::new(
+                CsvHashTaskSpawnerBuilderStdThreads::new(),
+            )
+            .build()?;
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,b,c";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,b,d";
+        let diff_res = csv_byte_diff.diff(
+            Csv::with_reader(csv_left.as_bytes()),
+            Csv::with_reader(csv_right.as_bytes()),
+        );
+
+        let diff_byte_records_actual: DiffByteRecords = diff_res.try_into()?;
+
+        let diff_rows_expected = vec![DiffByteRecord::Modify {
+            delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+            add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
+            field_indices: vec![2],
+        }];
+
+        assert_eq!(
+            diff_byte_records_actual.as_slice(),
+            diff_rows_expected.as_slice()
+        );
 
         Ok(())
     }
