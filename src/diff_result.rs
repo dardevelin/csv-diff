@@ -8,7 +8,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::{
     cmp::{max, Ordering},
     collections::{hash_map::IntoIter, VecDeque},
-    convert::TryInto,
+    convert::{TryFrom, TryInto},
 };
 
 /// Holds all information about the difference between two CSVs, after they have
@@ -530,5 +530,13 @@ impl Iterator for DiffByteRecordsIterator {
             _ => (),
         }
         None
+    }
+}
+
+impl TryFrom<DiffByteRecordsIterator> for DiffByteRecords {
+    type Error = csv::Error;
+
+    fn try_from(value: DiffByteRecordsIterator) -> Result<Self, Self::Error> {
+        Ok(DiffByteRecords(value.collect::<csv::Result<_>>()?))
     }
 }
