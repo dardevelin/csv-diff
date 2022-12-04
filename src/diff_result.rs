@@ -183,6 +183,16 @@ impl MaxCapacityThreshold {
     }
 }
 
+/// Emits all information about the difference between two CSVs as
+/// [`Result`](::csv::Result)<[`DiffByteRecord`](crate::diff_row::DiffByteRecord)>, after they have been compared with
+/// [`CsvByteDiff.diff`](crate::csv_diff::CsvByteDiff::diff).
+/// CSV records that are equal are __not__ emitted by this iterator.
+///
+/// Also, keep in mind, that this iterator produces values _unordered_ (with regard to the line in the CSV).
+/// If you want to have them ordered, you first need to collect them into [`DiffByteRecords`] and then use
+/// [`DiffByteRecords.sort_by_line`](DiffByteRecords::sort_by_line) to sort them in-place.
+///
+/// See the example on [`CsvByteDiff`](crate::csv_diff::CsvByteDiff) for general usage.
 pub struct DiffByteRecordsIterator {
     buf: VecDeque<csv::Result<DiffByteRecord>>,
     csv_left_right_parse_results: Receiver<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
