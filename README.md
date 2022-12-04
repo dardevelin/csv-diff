@@ -105,21 +105,12 @@ You can imagine dumping a database table in CSV format from your *test* and *pro
 
 ## Caveats
 Due to the fact that this crate is still in it's infancy, there are still some caveats, which we _might_ resolve in the near future:
+- if both CSVs have headers, they __must not__ be in a different ordering (see also [#6](https://gitlab.com/janriemer/csv-diff/-/issues/6) and [#3](https://gitlab.com/janriemer/csv-diff/-/issues/3))
 - resulting CSV records/lines that have differences are provided as [raw bytes][ByteRecord]; you can use [`StringRecord::from_byte_record`](https://docs.rs/csv/1.1.6/csv/struct.StringRecord.html#method.from_byte_record) , provided by the [csv crate][csv], to try converting them into UTF-8 encoded records.
-- CSVs must be [`Seek`][Seek]able
-    - `Seek` is implemented for the most important types like:
-        - [`File`][File]s
-        - and when wrapped in a [`Cursor`][Cursor]
-            - `String`s and `&str`
-            - `[u8]`
-- when using your own custom thread-pool, thread-spawning must support [scoped threads][crossbeam-scope]
 - documentation must be improved
 
 [csv]: https://docs.rs/csv/1.1.6/csv/
-[Seek]: https://doc.rust-lang.org/std/io/trait.Seek.html
 [ByteRecord]: https://docs.rs/csv/1.1.6/csv/struct.ByteRecord.html
-[Cursor]: https://doc.rust-lang.org/std/io/struct.Cursor.html
-[File]: https://doc.rust-lang.org/std/fs/struct.File.html
 
 ## Benchmarks
 You can run benchmarks with the following command:
