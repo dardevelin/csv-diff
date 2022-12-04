@@ -66,8 +66,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let csv_byte_diff = CsvByteDiffLocal::new()?;
 
     let mut diff_byte_records = csv_byte_diff.diff(
-        Csv::new(csv_data_left.as_bytes()),
-        Csv::new(csv_data_right.as_bytes()),
+        Csv::with_reader_seek(csv_data_left.as_bytes()),
+        Csv::with_reader_seek(csv_data_right.as_bytes()),
     )?;
 
     diff_byte_records.sort_by_line();
