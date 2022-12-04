@@ -48,4 +48,8 @@ impl ByteRecordLineInfo {
     pub fn into_byte_record(self) -> csv::ByteRecord {
         self.byte_record
     }
+
+    pub fn line(&self) -> u64 {
+        self.line
+    }
 }

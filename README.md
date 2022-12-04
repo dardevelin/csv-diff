@@ -1,29 +1,34 @@
-csv-diff
-==========================
-### Find the difference between two CSVs - with ludicrous speed!🚀
----------
+<h1 style="text-align: center;">csv-diff</h1>
 
+<h3 style="text-align: center;">
+	Find the difference between two CSVs - with ludicrous speed!🚀
+</h3>
+
+</br>
+
+<p style="text-align: center;">
 <!-- Tests status -->
-  <a href="https://gitlab.com/janriemer/csv-diff">
-    <img src="https://gitlab.com/janriemer/csv-diff/badges/main/pipeline.svg" />
+  <a href="https://gitlab.com/janriemer/csv-diff/-/commits/main">
+    <img alt="Pipeline Status" src="https://img.shields.io/gitlab/pipeline-status/janriemer/csv-diff?branch=main&color=B5E8E0&logoColor=D9E0EE&label=pipeline&labelColor=302D41&style=for-the-badge" />
   </a>
 <!-- Crates version -->
   <a href="https://crates.io/crates/csv-diff">
-    <img src="https://img.shields.io/crates/v/csv-diff.svg?style=flat-square"
+    <img src="https://img.shields.io/crates/v/csv-diff.svg?style=for-the-badge&logo=rust&color=C9CBFF&logoColor=D9E0EE&labelColor=302D41"
     alt="Crates.io version" />
   </a>
   <!-- Downloads -->
   <a href="https://crates.io/crates/csv-diff">
-    <img src="https://img.shields.io/crates/d/csv-diff.svg?style=flat-square"
-      alt="Download" />
+    <img src="https://img.shields.io/crates/d/csv-diff.svg?style=for-the-badge&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41"
+      alt="Downloads" />
   </a>
   <!-- docs.rs docs -->
   <a href="https://docs.rs/csv-diff">
-    <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
+    <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=for-the-badge&color=DDB6F2&logoColor=D9E0EE&labelColor=302D41"
       alt="docs.rs docs" />
   </a>
+</p>
 
-----------
+--------------
 
 ## Documentation
 https://docs.rs/csv-diff
@@ -31,12 +36,11 @@ https://docs.rs/csv-diff
 ### ⚠️Warning⚠️
 This crate is still in it's infancy. There will be breaking changes (and dragons🐉) in the beginning.
 
-## Highlights ✨
-- fastest CSV-diffing library in the world🚀
+## ✨ Highlights
+- 🚀 fastest CSV-diffing library in the world
     - compare two CSVs with 1,000,000 rows x 9 columns in __under 600ms__
-- thread-pool agnostic 🧵🧶
+- 🧵🧶 thread-pool agnostic
     - use your existing thread-pool (e.g. [rayon][rayon]) or use threads directly (via [crossbeam][crossbeam-scope]); configurable via [Cargo features](#getting-started)
-    - _caveat: thread-spawning must support [scoped threads][crossbeam-scope]_
 
 [rayon]: https://docs.rs/rayon/1.5.0/rayon/
 [crossbeam-scope]: https://docs.rs/crossbeam/0.8.0/crossbeam/thread/fn.scope.html
@@ -61,8 +65,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let csv_byte_diff = CsvByteDiffLocal::new()?;
 
     let mut diff_byte_records = csv_byte_diff.diff(
-        Csv::new(csv_data_left.as_bytes()),
-        Csv::new(csv_data_right.as_bytes()),
+        Csv::with_reader_seek(csv_data_left.as_bytes()),
+        Csv::with_reader_seek(csv_data_right.as_bytes()),
     )?;
 
     diff_byte_records.sort_by_line();
@@ -87,11 +91,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Getting Started
 In your Cargo.toml file add the following lines under `[dependencies]`:
 ```toml
-csv-diff = "0.1.0-alpha"
+csv-diff = "0.1.0-beta.0"
 ```
 This will use a rayon thread-pool, but you can opt-out of it and for example use threads without a thread-pool, by opting in into the `crossbeam-threads` feature (and opting-out of the default features):
 ```toml
-csv-diff = { version = "0.1.0-alpha", default-features = false, features = ["crossbeam-threads"] }
+csv-diff = { version = "0.1.0-beta.0", default-features = false, features = ["crossbeam-threads"] }
 ```
 
 ## Use Case
@@ -101,21 +105,12 @@ You can imagine dumping a database table in CSV format from your *test* and *pro
 
 ## Caveats
 Due to the fact that this crate is still in it's infancy, there are still some caveats, which we _might_ resolve in the near future:
+- if both CSVs have headers, they __must not__ be in a different ordering (see also [#6](https://gitlab.com/janriemer/csv-diff/-/issues/6) and [#3](https://gitlab.com/janriemer/csv-diff/-/issues/3))
 - resulting CSV records/lines that have differences are provided as [raw bytes][ByteRecord]; you can use [`StringRecord::from_byte_record`](https://docs.rs/csv/1.1.6/csv/struct.StringRecord.html#method.from_byte_record) , provided by the [csv crate][csv], to try converting them into UTF-8 encoded records.
-- CSVs must be [`Seek`][Seek]able
-    - `Seek` is implemented for the most important types like:
-        - [`File`][File]s
-        - and when wrapped in a [`Cursor`][Cursor]
-            - `String`s and `&str`
-            - `[u8]`
-- when using your own custom thread-pool, thread-spawning must support [scoped threads][crossbeam-scope]
 - documentation must be improved
 
 [csv]: https://docs.rs/csv/1.1.6/csv/
-[Seek]: https://doc.rust-lang.org/std/io/trait.Seek.html
 [ByteRecord]: https://docs.rs/csv/1.1.6/csv/struct.ByteRecord.html
-[Cursor]: https://doc.rust-lang.org/std/io/struct.Cursor.html
-[File]: https://doc.rust-lang.org/std/fs/struct.File.html
 
 ## Benchmarks
 You can run benchmarks with the following command:
@@ -127,7 +122,7 @@ cargo bench
 This crate is implemented in __100% Safe Rust__, which is ensured by using `#![forbid(unsafe_code)]`.
 
 ## MSRV
-The Minimum Supported Rust Version for this crate is __1.49__. An increase of MSRV will be indicated by a breaking change (according to SemVer).
+The Minimum Supported Rust Version for this crate is __1.56__. An increase of MSRV will be indicated by a minor change (according to SemVer).
 
 ## Credits
 This crate is inspired by the CLI tool [csvdiff](https://github.com/aswinkarthik/csvdiff) by Aswin Karthik, which is written in Go. Definitely check it out. It is a great tool.
@@ -139,7 +134,6 @@ Additionally, this crate would not exist without the awesome Rust community and 
 - [csv][csv]
 - [mown](https://docs.rs/mown/0.2.1/mown/)
 - [rayon][rayon]
-- [smallvec](https://docs.rs/smallvec/1.7.0/smallvec/)
 - [thiserror](https://docs.rs/thiserror/1.0.30/thiserror/)
 
 

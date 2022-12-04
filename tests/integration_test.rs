@@ -404,6 +404,7 @@ mod integration_test {
     }
 
     mod custom_scoped_threads {
+        #[cfg(not(feature = "rayon-threads"))]
         use super::*;
         use csv_diff::{
             csv_hash_task_spawner::{
@@ -467,6 +468,7 @@ mod integration_test {
         }
 
         impl CsvHashTaskSpawnerBuilderCustom {
+            #[cfg(not(feature = "rayon-threads"))]
             pub fn new(pool_size: usize) -> Self {
                 Self { pool_size }
             }
@@ -515,6 +517,7 @@ mod integration_test {
     }
 
     mod custom_threads {
+        #[cfg(not(feature = "rayon-threads"))]
         use super::*;
         use crossbeam_channel::bounded;
         use csv_diff::{
@@ -578,6 +581,7 @@ mod integration_test {
         struct CsvHashTaskSpawnerBuilderCustom;
 
         impl CsvHashTaskSpawnerBuilderCustom {
+            #[cfg(not(feature = "rayon-threads"))]
             pub fn new() -> Self {
                 Self
             }

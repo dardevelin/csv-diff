@@ -3,20 +3,19 @@ use crate::csv_hash_comparer::CsvHashComparer;
 use crate::csv_hash_receiver_comparer::CsvHashReceiverStreamComparer;
 #[cfg(not(feature = "rayon-threads"))]
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilder;
+use crate::csv_hash_task_spawner::CsvHashTaskSpawnerLocalBuilder;
 #[cfg(feature = "rayon-threads")]
-use crate::csv_hash_task_spawner::CsvHashTaskSpawnerRayon;
+use crate::csv_hash_task_spawner::CsvHashTaskSpawnerLocalRayon;
 use crate::csv_hash_task_spawner::{
     CsvHashTaskLineSenders, CsvHashTaskSenderWithRecycleReceiver, CsvHashTaskSpawner,
-    CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder,
+    CsvHashTaskSpawnerLocal,
 };
 #[cfg(feature = "crossbeam-threads")]
 use crate::csv_hash_task_spawner::{
     CsvHashTaskSpawnerLocalBuilderCrossbeam, CsvHashTaskSpawnerLocalCrossbeam,
 };
 #[cfg(feature = "rayon-threads")]
-use crate::csv_hash_task_spawner::{
-    CsvHashTaskSpawnerLocalBuilderRayon, CsvHashTaskSpawnerLocalRayon,
-};
+use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerLocalBuilderRayon, CsvHashTaskSpawnerRayon};
 use crate::csv_parse_result::{CsvLeftRightParseResult, RecordHashWithPosition};
 use crate::diff_result::{DiffByteRecords, DiffByteRecordsIterator};
 use crate::thread_scope_strategy::*;
@@ -29,6 +28,60 @@ use std::sync::Arc;
 use std::{collections::HashSet, iter::Iterator};
 use thiserror::Error;
 
+/// Compare two [CSVs](https://en.wikipedia.org/wiki/Comma-separated_values) lazily with each other (for the eager-/blocking-based variant, see [`CsvByteDiffLocal`](crate::csv_diff::CsvByteDiffLocal)).
+///
+/// Use this instead of [`CsvByteDiffLocal`](crate::csv_diff::CsvByteDiffLocal), when:
+/// - you own your CSV data and you want to use an [`Iterator`](`crate::diff_result::DiffByteRecordsIterator`) for the differences,
+/// so you don't have to read all differences into memory
+/// - your CSV data structure does __not__ support [`Seek`].
+///
+/// By default, `CsvByteDiff` uses a [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html) to compare differences.
+/// If you already have an existing rayon thread-pool that you want to use for `CsvByteDiff`, you can construct it with a builder (see also [`rayon_thread_pool`](crate::csv_diff::CsvByteDiffBuilder::rayon_thread_pool) on [`CsvByteDiffBuilder`](CsvByteDiffBuilder)).
+/// for using an existing [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html)
+/// when creating `CsvByteDiff`.
+///
+/// # Example: create `CsvByteDiff` with default values and compare two CSVs byte-wise lazily
+#[cfg_attr(
+    feature = "rayon-threads",
+    doc = r##"
+```
+use csv_diff::{csv_diff::CsvByteDiff, csv::Csv};
+use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
+use std::collections::HashSet;
+use std::iter::FromIterator;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+// some csv data with a header, where the first column is a unique id
+let csv_left = "\
+header1,header2,header3\n\
+a,b,c";
+let csv_right = "\
+header1,header2,header3\n\
+a,b,d";
+
+let csv_diff = CsvByteDiff::new()?;
+
+let mut diff_iterator = csv_diff.diff(
+    Csv::with_reader(csv_left.as_bytes()),
+    Csv::with_reader(csv_right.as_bytes()),
+);
+
+let diff_row_actual = diff_iterator
+    .next()
+    .ok_or("Expected a difference between the two CSVs, but got none".to_string())??;
+
+let diff_row_expected = DiffByteRecord::Modify {
+    delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),
+    add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "d"]), 2),
+    field_indices: vec![2],
+};
+
+assert_eq!(diff_row_actual, diff_row_expected);
+
+Ok(())
+# }
+```
+"##
+)]
 #[derive(Debug)]
 pub struct CsvByteDiff<T: CsvHashTaskSpawner> {
     primary_key_columns: HashSet<usize>,
@@ -92,6 +145,62 @@ where
     }
 }
 
+/// Create a [`CsvByteDiff`](CsvByteDiff) with configuration options.
+/// # Example: create a `CsvByteDiff`, where column 1 and column 3 are treated as a compound primary key.
+#[cfg_attr(
+    feature = "rayon-threads",
+    doc = r##"
+```
+use csv_diff::{csv_diff::{CsvByteDiff, CsvByteDiffBuilder}, csv::Csv};
+use csv_diff::diff_row::{ByteRecordLineInfo, DiffByteRecord};
+use csv_diff::diff_result::DiffByteRecords;
+use std::convert::TryInto;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+// some csv data with a header, where the first column and third column represent a compound key
+let csv_data_left = "\
+    id,name,commit_sha\n\
+    1,lemon,efae52\n\
+    2,strawberry,a33411"; // this csv line is seen as "Deleted" and not "Modified"
+                          // because "id" and "commit_sha" are different and both columns
+                          // _together_ represent the primary key
+let csv_data_right = "\
+    id,name,commit_sha\n\
+    1,lemon,efae52\n\
+    2,strawberry,ddef23"; // this csv line is seen as "Added" and not "Modified",
+                          // because "id" and "commit_sha" are different and both columns
+                          // _together_ represent the primary key
+
+let csv_byte_diff = CsvByteDiffBuilder::new()
+    .primary_key_columns(vec![0usize, 2])
+    .build()?;
+
+let mut diff_byte_records: DiffByteRecords = csv_byte_diff
+    .diff(
+        Csv::with_reader(csv_data_left.as_bytes()),
+        Csv::with_reader(csv_data_right.as_bytes()),
+    )
+    .try_into()?;
+
+let diff_byte_rows = diff_byte_records.as_slice();
+
+assert_eq!(
+    diff_byte_rows,
+    &[
+        DiffByteRecord::Delete(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["2", "strawberry", "a33411"]),
+            3
+        ),),
+        DiffByteRecord::Add(ByteRecordLineInfo::new(
+            csv::ByteRecord::from(vec!["2", "strawberry", "ddef23"]),
+            3
+        ),)
+    ]
+);
+Ok(())
+# }
+```
+"##
+)]
 #[derive(Debug)]
 #[cfg_attr(feature = "rayon-threads", derive(Default))]
 pub struct CsvByteDiffBuilder<T: CsvHashTaskSpawner> {
@@ -170,7 +279,13 @@ impl CsvByteDiffBuilder<CsvHashTaskSpawnerRayon> {
     }
 }
 
-/// Compare two [CSVs](https://en.wikipedia.org/wiki/Comma-separated_values) with each other.
+/// Compare two [CSVs](https://en.wikipedia.org/wiki/Comma-separated_values) eagerly with each other (for the lazy/iterator-based variant, see [`CsvByteDiff`](crate::csv_diff::CsvByteDiff)).
+///
+/// Use this instead of [`CsvByteDiff`](crate::csv_diff::CsvByteDiff), when your CSV data is a local reference and you don't own it.
+///
+/// This requires your CSV data to be [`Seek`]able. If it isn't `Seek`able out of the box, it might still auto implement
+/// the trait [`CsvReadSeek`](crate::csv::CsvReadSeek) (see [`Csv::with_reader_seek`](crate::csv::Csv::with_reader_seek)).
+/// If your CSV data can't be made `Seek`able, consider using [`CsvByteDiff`](crate::csv_diff::CsvByteDiff) instead.
 ///
 /// `CsvByteDiffLocal` uses scoped threads internally for comparison.
 /// By default, it uses [rayon's scoped threads within a rayon thread pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html#method.scope).
@@ -178,7 +293,7 @@ impl CsvByteDiffBuilder<CsvHashTaskSpawnerRayon> {
 /// for using an existing [rayon thread-pool](https://docs.rs/rayon/1.5.0/rayon/struct.ThreadPool.html)
 /// when creating `CsvByteDiffLocal`.
 ///
-/// # Example: create `CsvByteDiffLocal` with default values and compare two CSVs byte-wise
+/// # Example: create `CsvByteDiffLocal` with default values and compare two CSVs byte-wise eagerly
 #[cfg_attr(
     feature = "rayon-threads",
     doc = r##"
@@ -202,8 +317,6 @@ let mut diff_byte_records = csv_byte_diff.diff(
     Csv::with_reader_seek(csv_data_left.as_bytes()),
     Csv::with_reader_seek(csv_data_right.as_bytes()),
 )?;
-
-diff_byte_records.sort_by_line();
 
 let diff_byte_rows = diff_byte_records.as_slice();
 
@@ -423,7 +536,7 @@ impl<T> CsvByteDiffLocal<T>
 where
     T: CsvHashTaskSpawnerLocal,
 {
-    /// Compares `csv_left` with `csv_right` and returns the [CSV byte records](crate::diff_result::DiffByteRecords) that are different.
+    /// Compares `csv_left` with `csv_right` and returns a [`csv::Result`] with the [CSV byte records](crate::diff_result::DiffByteRecords) that are different.
     ///
     /// [`Csv<R>`](Csv<R>) is a wrapper around a CSV reader with some configuration options.
     ///

@@ -1,7 +1,7 @@
 /*!
 Find the difference between two CSVs - with ludicrous speed!🚀
 
-`csv-diff` is a crate for finding the difference between two CSVs.
+`csv-diff` finds the difference between two CSVs.
 It is the fastest CSV-diffing library in the world!
 Comparing two 1,000,000 rows x 9 columns CSVs takes __under 600ms__ (when using [raw bytes](csv_diff::CsvByteDiffLocal::diff)).
 It is *thread-pool-agnostic*, meaning you can provide your own existing thread-pool
@@ -16,9 +16,8 @@ with each other to find differences.
 
 # Overview
 The most important types you will use are:
-1. [`CsvByteDiffLocal`](csv_diff::CsvByteDiffLocal) for comparing two CSVs byte-wise in a blocking fashion.
-2. [`CsvByteDiff`](csv_diff::CsvByteDiff) for comparing two CSVs byte-wise in a streaming fashion.
-3. [`DiffByteRecords`](diff_result::DiffByteRecords) for getting the actual differences between the compared CSVs as raw bytes.
+1. [`CsvByteDiffLocal`](csv_diff::CsvByteDiffLocal) for comparing two CSVs byte-wise in a blocking fashion and getting the result as [`DiffByteRecords`](diff_result::DiffByteRecords).
+2. [`CsvByteDiff`](csv_diff::CsvByteDiff) for comparing two CSVs byte-wise lazily and getting the result as an [`Iterator`](diff_result::DiffByteRecordsIterator).
 */
 
 #![forbid(unsafe_code)]
@@ -35,3 +34,6 @@ mod csv_parser_hasher;
 pub mod diff_result;
 pub mod diff_row;
 mod thread_scope_strategy; // TODO: do we really need this?
+
+#[doc(inline)]
+pub use ::csv::Result;
