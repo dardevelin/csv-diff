@@ -134,7 +134,6 @@ Additionally, this crate would not exist without the awesome Rust community and 
 - [csv][csv]
 - [mown](https://docs.rs/mown/0.2.1/mown/)
 - [rayon][rayon]
-- [smallvec](https://docs.rs/smallvec/1.7.0/smallvec/)
 - [thiserror](https://docs.rs/thiserror/1.0.30/thiserror/)
 
 
