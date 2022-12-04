@@ -5,11 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use crossbeam_channel::{bounded, Receiver, Sender};
-use csv::Reader;
-#[cfg(feature = "rayon-threads")]
-use mown::Mown;
-
 use crate::csv_parse_result::{
     CsvLeftRightParseResult, CsvParseResult, CsvParseResultLeft, CsvParseResultRight,
 };
@@ -25,6 +20,8 @@ use crate::{
     diff_result::DiffByteRecordsIterator,
     thread_scope_strategy::ThreadScoper,
 };
+use crossbeam_channel::{bounded, Receiver, Sender};
+use csv::Reader;
 
 pub struct CsvHashTaskSenderWithRecycleReceiver<R: Read> {
     sender: Sender<CsvLeftRightParseResult<CsvByteRecordWithHash>>,
