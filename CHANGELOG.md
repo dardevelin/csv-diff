@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - None
 
-## 0.1.0-beta.0 (13. November, 2022)
+## 0.1.0-beta.0 (4. December, 2022)
 
 ### Added
 - Add new struct `CsvByteDiff` (the existing struct has been renamed `CsvByteDiff` -> `CsvByteDiffLocal`).
