@@ -3,20 +3,19 @@ use crate::csv_hash_comparer::CsvHashComparer;
 use crate::csv_hash_receiver_comparer::CsvHashReceiverStreamComparer;
 #[cfg(not(feature = "rayon-threads"))]
 use crate::csv_hash_task_spawner::CsvHashTaskSpawnerBuilder;
+use crate::csv_hash_task_spawner::CsvHashTaskSpawnerLocalBuilder;
 #[cfg(feature = "rayon-threads")]
-use crate::csv_hash_task_spawner::CsvHashTaskSpawnerRayon;
+use crate::csv_hash_task_spawner::CsvHashTaskSpawnerLocalRayon;
 use crate::csv_hash_task_spawner::{
     CsvHashTaskLineSenders, CsvHashTaskSenderWithRecycleReceiver, CsvHashTaskSpawner,
-    CsvHashTaskSpawnerLocal, CsvHashTaskSpawnerLocalBuilder,
+    CsvHashTaskSpawnerLocal,
 };
 #[cfg(feature = "crossbeam-threads")]
 use crate::csv_hash_task_spawner::{
     CsvHashTaskSpawnerLocalBuilderCrossbeam, CsvHashTaskSpawnerLocalCrossbeam,
 };
 #[cfg(feature = "rayon-threads")]
-use crate::csv_hash_task_spawner::{
-    CsvHashTaskSpawnerLocalBuilderRayon, CsvHashTaskSpawnerLocalRayon,
-};
+use crate::csv_hash_task_spawner::{CsvHashTaskSpawnerLocalBuilderRayon, CsvHashTaskSpawnerRayon};
 use crate::csv_parse_result::{CsvLeftRightParseResult, RecordHashWithPosition};
 use crate::diff_result::{DiffByteRecords, DiffByteRecordsIterator};
 use crate::thread_scope_strategy::*;
