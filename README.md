@@ -1,29 +1,34 @@
-csv-diff
-==========================
-### Find the difference between two CSVs - with ludicrous speed!🚀
----------
+<h1 style="text-align: center;">csv-diff</h1>
 
+<h3 style="text-align: center;">
+	Find the difference between two CSVs - with ludicrous speed!🚀
+</h3>
+
+</br>
+
+<p style="text-align: center;">
 <!-- Tests status -->
-  <a href="https://gitlab.com/janriemer/csv-diff">
-    <img src="https://gitlab.com/janriemer/csv-diff/badges/main/pipeline.svg" />
+  <a href="https://gitlab.com/janriemer/csv-diff/-/commits/main">
+    <img alt="Pipeline Status" src="https://img.shields.io/gitlab/pipeline-status/janriemer/csv-diff?branch=main&color=B5E8E0&logoColor=D9E0EE&label=pipeline&labelColor=302D41&style=for-the-badge" />
   </a>
 <!-- Crates version -->
   <a href="https://crates.io/crates/csv-diff">
-    <img src="https://img.shields.io/crates/v/csv-diff.svg?style=flat-square"
+    <img src="https://img.shields.io/crates/v/csv-diff.svg?style=for-the-badge&logo=rust&color=C9CBFF&logoColor=D9E0EE&labelColor=302D41"
     alt="Crates.io version" />
   </a>
   <!-- Downloads -->
   <a href="https://crates.io/crates/csv-diff">
-    <img src="https://img.shields.io/crates/d/csv-diff.svg?style=flat-square"
-      alt="Download" />
+    <img src="https://img.shields.io/crates/d/csv-diff.svg?style=for-the-badge&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41"
+      alt="Downloads" />
   </a>
   <!-- docs.rs docs -->
   <a href="https://docs.rs/csv-diff">
-    <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
+    <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=for-the-badge&color=DDB6F2&logoColor=D9E0EE&labelColor=302D41"
       alt="docs.rs docs" />
   </a>
+</p>
 
-----------
+--------------
 
 ## Documentation
 https://docs.rs/csv-diff
