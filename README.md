@@ -36,12 +36,11 @@ https://docs.rs/csv-diff
 ### ⚠️Warning⚠️
 This crate is still in it's infancy. There will be breaking changes (and dragons🐉) in the beginning.
 
-## Highlights ✨
-- fastest CSV-diffing library in the world🚀
+## ✨ Highlights
+- 🚀 fastest CSV-diffing library in the world
     - compare two CSVs with 1,000,000 rows x 9 columns in __under 600ms__
-- thread-pool agnostic 🧵🧶
+- 🧵🧶 thread-pool agnostic
     - use your existing thread-pool (e.g. [rayon][rayon]) or use threads directly (via [crossbeam][crossbeam-scope]); configurable via [Cargo features](#getting-started)
-    - _caveat: thread-spawning must support [scoped threads][crossbeam-scope]_
 
 [rayon]: https://docs.rs/rayon/1.5.0/rayon/
 [crossbeam-scope]: https://docs.rs/crossbeam/0.8.0/crossbeam/thread/fn.scope.html
