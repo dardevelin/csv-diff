@@ -34,3 +34,6 @@ mod csv_parser_hasher;
 pub mod diff_result;
 pub mod diff_row;
 mod thread_scope_strategy; // TODO: do we really need this?
+
+#[doc(inline)]
+pub use ::csv::Result;
