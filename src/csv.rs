@@ -105,7 +105,7 @@ impl<R> CsvBuilder<R> {
     }
 }
 
-/// Produces a value that implements [`Read`](std::io::Read) + [`Seek`](std::io::Seek) + [`Send`](core::marker::Send).
+/// Produces a CSV reader that implements [`Read`](std::io::Read) + [`Seek`](std::io::Seek) + [`Send`](core::marker::Send).
 pub trait CsvReadSeek<R>
 where
     R: Read + Seek + Send,
