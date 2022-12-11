@@ -56,6 +56,13 @@ impl<R: Read + Send> Csv<R> {
             headers: true,
         }
     }
+
+    pub fn from_csv_reader(csv_rdr: csv::Reader<R>) -> Self {
+        Self {
+            headers: csv_rdr.has_headers(),
+            reader: csv_rdr.into_inner(),
+        }
+    }
 }
 
 impl<R: Read> From<Csv<R>> for csv::Reader<R> {
