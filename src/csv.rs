@@ -66,6 +66,14 @@ impl<R: Read> From<Csv<R>> for csv::Reader<R> {
     }
 }
 
+impl<R: Read + Send + 'static> From<Csv<R>> for csv::Reader<Box<R>> {
+    fn from(csv: Csv<R>) -> Self {
+        csv::ReaderBuilder::new()
+            .has_headers(csv.headers)
+            .from_reader(Box::new(csv.reader))
+    }
+}
+
 pub struct CsvBuilder<R> {
     reader: R,
     headers: bool,
