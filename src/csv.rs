@@ -1,6 +1,5 @@
 use std::io::{Cursor, Read, Seek};
 
-#[derive(Clone)]
 pub struct Csv<R> {
     reader: R,
     headers: bool,
