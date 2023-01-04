@@ -61,7 +61,7 @@ impl CsvParserHasherLinesSender<CsvLeftRightParseResult<RecordHashWithPosition>>
         csv: Csv<R>,
         primary_key_columns: &HashSet<usize>,
     ) -> csv::Result<csv::Reader<R>> {
-        let mut csv_reader: Reader<R> = csv.into();
+        let mut csv_reader: Reader<R> = csv.into_csv_reader();
         let mut csv_record = csv::ByteRecord::new();
         // read first record in order to get the number of fields
         if csv_reader.read_byte_record(&mut csv_record)? {
@@ -138,7 +138,7 @@ impl CsvParserHasherSender<CsvLeftRightParseResult<CsvByteRecordWithHash>> {
         primary_key_columns: &HashSet<usize>,
         receiver_csv_recycle: Receiver<csv::ByteRecord>,
     ) {
-        let mut csv_reader: Reader<R> = csv.into();
+        let mut csv_reader: Reader<R> = csv.into_csv_reader();
         let mut csv_record = csv::ByteRecord::new();
         // read first record in order to get the number of fields
         match csv_reader.read_byte_record(&mut csv_record) {

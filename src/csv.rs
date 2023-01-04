@@ -1,9 +1,7 @@
 use std::io::{Cursor, Read, Seek};
 
-#[derive(Clone)]
 pub struct Csv<R> {
-    reader: R,
-    headers: bool,
+    csv_reader: csv::Reader<R>,
 }
 
 impl<R: Read + Seek + Send> Csv<R> {
@@ -43,65 +41,28 @@ Ok(())
     )]
     pub fn with_reader_seek<RSeek: CsvReadSeek<R>>(reader: RSeek) -> Self {
         Self {
-            reader: reader.into_read_seek(),
-            headers: true,
+            csv_reader: csv::Reader::from_reader(reader.into_read_seek()),
         }
     }
 }
 
-impl<R: Read + Send> Csv<R> {
+impl<R: Read> Csv<R> {
     pub fn with_reader(reader: R) -> Self {
         Self {
-            reader,
-            headers: true,
+            csv_reader: csv::Reader::from_reader(reader),
         }
     }
 }
 
-impl<R: Read> From<Csv<R>> for csv::Reader<R> {
-    fn from(csv: Csv<R>) -> Self {
-        csv::ReaderBuilder::new()
-            .has_headers(csv.headers)
-            .from_reader(csv.reader)
+impl<R> Csv<R> {
+    pub fn into_csv_reader(self) -> csv::Reader<R> {
+        self.csv_reader
     }
 }
 
-pub struct CsvBuilder<R> {
-    reader: R,
-    headers: bool,
-}
-
-impl<R: Read + Seek + Send> CsvBuilder<R> {
-    pub fn with_reader_seek<RSeek: CsvReadSeek<R>>(reader: RSeek) -> Self {
-        Self {
-            reader: reader.into_read_seek(),
-            headers: true,
-        }
-    }
-}
-
-impl<R: Read + Send> CsvBuilder<R> {
-    pub fn with_reader(reader: R) -> Self {
-        Self {
-            reader,
-            headers: true,
-        }
-    }
-}
-
-impl<R> CsvBuilder<R> {
-    pub fn headers(self, yes: bool) -> Self {
-        Self {
-            headers: yes,
-            ..self
-        }
-    }
-
-    pub fn build(self) -> Csv<R> {
-        Csv {
-            reader: self.reader,
-            headers: self.headers,
-        }
+impl<R> From<csv::Reader<R>> for Csv<R> {
+    fn from(rdr: csv::Reader<R>) -> Self {
+        Self { csv_reader: rdr }
     }
 }
 
@@ -129,5 +90,15 @@ where
 {
     fn into_read_seek(self) -> R {
         self
+    }
+}
+
+pub trait CsvReaderBuilderExt<R: Read + Seek + Send> {
+    fn from_reader_seek<RSeek: CsvReadSeek<R>>(&self, reader: RSeek) -> csv::Reader<R>;
+}
+
+impl<R: Read + Seek + Send> CsvReaderBuilderExt<R> for csv::ReaderBuilder {
+    fn from_reader_seek<RSeek: CsvReadSeek<R>>(&self, reader: RSeek) -> csv::Reader<R> {
+        self.from_reader(reader.into_read_seek())
     }
 }

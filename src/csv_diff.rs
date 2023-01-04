@@ -668,6 +668,7 @@ where
 mod tests {
 
     use super::*;
+    use crate::csv::CsvReaderBuilderExt;
     use crate::diff_result::DiffByteRecords;
     use crate::diff_row::{ByteRecordLineInfo, DiffByteRecord};
     use pretty_assertions::assert_eq;
@@ -733,19 +734,19 @@ mod tests {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn diff_no_headers_empty_no_diff() -> Result<(), Box<dyn Error>> {
-        use crate::csv::CsvBuilder;
-
         let csv_left = "";
         let csv_right = "";
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(csv_left.as_bytes())
-                    .headers(false)
-                    .build(),
-                CsvBuilder::with_reader_seek(csv_right.as_bytes())
-                    .headers(false)
-                    .build(),
+                csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader_seek(csv_left.as_bytes())
+                    .into(),
+                csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader_seek(csv_right.as_bytes())
+                    .into(),
             )
             .unwrap();
         let diff_res_expected = DiffByteRecords(vec![]);
@@ -797,8 +798,6 @@ mod tests {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn diff_one_line_no_header_no_diff() -> Result<(), Box<dyn Error>> {
-        use crate::csv::CsvBuilder;
-
         let csv_left = "\
                         a,b,c";
         let csv_right = "\
@@ -806,12 +805,14 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(csv_left.as_bytes())
-                    .headers(false)
-                    .build(),
-                CsvBuilder::with_reader_seek(csv_right.as_bytes())
-                    .headers(false)
-                    .build(),
+                csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader_seek(csv_left.as_bytes())
+                    .into(),
+                csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader_seek(csv_right.as_bytes())
+                    .into(),
             )
             .unwrap();
         let diff_res_expected = DiffByteRecords(vec![]);
@@ -824,20 +825,20 @@ mod tests {
     #[test]
     fn diff_both_empty_but_one_has_header_and_the_other_has_none_both_with_correct_header_flag_no_diff(
     ) -> Result<(), Box<dyn Error>> {
-        use crate::csv::CsvBuilder;
-
         let csv_left = "\
                         header1,header2,header3";
         let csv_right = "";
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(csv_left.as_bytes())
-                    .headers(true)
-                    .build(),
-                CsvBuilder::with_reader_seek(csv_right.as_bytes())
-                    .headers(false)
-                    .build(),
+                csv::ReaderBuilder::new()
+                    .has_headers(true)
+                    .from_reader_seek(csv_left.as_bytes())
+                    .into(),
+                csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader_seek(csv_right.as_bytes())
+                    .into(),
             )
             .unwrap();
         let diff_res_expected = DiffByteRecords(vec![]);
@@ -891,8 +892,6 @@ mod tests {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn diff_one_line_one_has_headers_one_does_not_no_diff() -> Result<(), Box<dyn Error>> {
-        use crate::csv::CsvBuilder;
-
         let csv_left = "\
                         header1,header2,header3\n\
                         a,b,c";
@@ -901,10 +900,14 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                Csv::with_reader_seek(csv_left.as_bytes()),
-                CsvBuilder::with_reader_seek(csv_right.as_bytes())
-                    .headers(false)
-                    .build(),
+                csv::ReaderBuilder::new()
+                    .has_headers(true)
+                    .from_reader_seek(csv_left.as_bytes())
+                    .into(),
+                csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader_seek(csv_right.as_bytes())
+                    .into(),
             )
             .unwrap();
         let diff_res_expected = DiffByteRecords(vec![]);
@@ -967,8 +970,6 @@ mod tests {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn diff_one_line_one_with_header_and_one_not_added_one_line() -> Result<(), Box<dyn Error>> {
-        use crate::csv::CsvBuilder;
-
         let csv_left = "\
                         header1,header2,header3\n\
                         ";
@@ -977,12 +978,14 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(csv_left.as_bytes())
-                    .headers(true)
-                    .build(),
-                CsvBuilder::with_reader_seek(csv_right.as_bytes())
-                    .headers(false)
-                    .build(),
+                csv::ReaderBuilder::new()
+                    .has_headers(true)
+                    .from_reader_seek(csv_left.as_bytes())
+                    .into(),
+                csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader_seek(csv_right.as_bytes())
+                    .into(),
             )
             .unwrap();
         let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Add(
@@ -1021,8 +1024,6 @@ mod tests {
     #[cfg(feature = "rayon-threads")]
     #[test]
     fn diff_one_line_one_with_header_and_one_not_deleted_one_line() -> Result<(), Box<dyn Error>> {
-        use crate::csv::CsvBuilder;
-
         let csv_left = "\
                         a,b,c";
         let csv_right = "\
@@ -1031,12 +1032,14 @@ mod tests {
 
         let diff_res_actual = CsvByteDiffLocal::new()?
             .diff(
-                CsvBuilder::with_reader_seek(csv_left.as_bytes())
-                    .headers(false)
-                    .build(),
-                CsvBuilder::with_reader_seek(csv_right.as_bytes())
-                    .headers(true)
-                    .build(),
+                csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader_seek(csv_left.as_bytes())
+                    .into(),
+                csv::ReaderBuilder::new()
+                    .has_headers(true)
+                    .from_reader_seek(csv_right.as_bytes())
+                    .into(),
             )
             .unwrap();
         let diff_res_expected = DiffByteRecords(vec![DiffByteRecord::Delete(
