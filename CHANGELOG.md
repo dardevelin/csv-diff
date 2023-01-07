@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - None
 
+## 0.1.0-beta.1 (7. January, 2023)
+
+### Added
+- Add a `From` impl on `Csv` for `csv::Reader` ([!19](https://gitlab.com/janriemer/csv-diff/-/merge_requests/19))
+
+### Changed
+- __breaking__: Allow `Csv<R>` to be directly constructed from `csv::Reader<R>` ([!19](https://gitlab.com/janriemer/csv-diff/-/merge_requests/19)).   
+For example we can do the following:
+
+```rust
+let csv_left = "\
+                header1,header2,header3";
+let csv_right = "";
+
+let diff_res_actual = CsvByteDiffLocal::new()?
+    .diff(
+        csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader_seek(csv_left.as_bytes())
+            .into(),
+        csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader_seek(csv_right.as_bytes())
+            .into(),
+    )
+    .unwrap();
+```
+
+WARNING: Although this API seems very elegant at first, it has a _major_
+shortcoming: we currently can't handle the case, where the `csv::Reader`
+has been constructed with the setting `flexible` (or at least we
+haven't tested it yet; see also the [flexible option on `csv::ReaderBuilder`](https://docs.rs/csv/latest/csv/struct.ReaderBuilder.html#method.flexible).
+- __breaking__: Remove `Clone` derive on `Csv<R>` ([!19](https://gitlab.com/janriemer/csv-diff/-/merge_requests/19))
+
+### Fixed
+- None
+
 ## 0.1.0-beta.0 (4. December, 2022)
 
 ### Added
