@@ -872,11 +872,11 @@ mod tests {
     {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "x", "y"]),
+                csv::ByteRecord::from(vec!["a", "b", "c"]),
                 4,
             )),
         ]);
@@ -895,11 +895,11 @@ mod tests {
     {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                csv::ByteRecord::from(vec!["a", "x", "y"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "x", "y"]),
+                csv::ByteRecord::from(vec!["a", "b", "c"]),
                 4,
             )),
         ]);
@@ -917,11 +917,11 @@ mod tests {
     fn sort_by_second_col_a_in_add_is_less_than_b_in_modify_delete() -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "b", "z"]),
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["g", "a", "i"]),
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
                 4,
             )),
         ]);
@@ -930,11 +930,11 @@ mod tests {
 
         let expected = DiffByteRecords(vec![
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["g", "a", "i"]),
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
                 4,
             )),
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "b", "z"]),
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
                 3,
             )),
         ]);
@@ -948,11 +948,11 @@ mod tests {
     fn sort_by_certain_col_idx_twice_is_ok() -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["az", "b", "c"]),
+                csv::ByteRecord::from(vec!["az", "_", "_"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "i"]),
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
                 4,
             )),
         ]);
@@ -961,11 +961,11 @@ mod tests {
 
         let expected = DiffByteRecords(vec![
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "i"]),
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
                 4,
             )),
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["az", "b", "c"]),
+                csv::ByteRecord::from(vec!["az", "_", "_"]),
                 3,
             )),
         ]);
@@ -980,11 +980,11 @@ mod tests {
     ) -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "b", "z"]),
+                csv::ByteRecord::from(vec!["x", "b", "_"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "a", "i"]),
+                csv::ByteRecord::from(vec!["x", "a", "_"]),
                 4,
             )),
         ]);
@@ -993,11 +993,11 @@ mod tests {
 
         let expected = DiffByteRecords(vec![
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "a", "i"]),
+                csv::ByteRecord::from(vec!["x", "a", "_"]),
                 4,
             )),
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["x", "b", "z"]),
+                csv::ByteRecord::from(vec!["x", "b", "_"]),
                 3,
             )),
         ]);
@@ -1076,11 +1076,11 @@ mod tests {
     ) -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["same", "b", "x"]),
+                csv::ByteRecord::from(vec!["same", "_", "_"]),
                 4,
             )),
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["same", "a", "z"]),
+                csv::ByteRecord::from(vec!["same", "_", "_"]),
                 5,
             )),
         ]);
@@ -1089,11 +1089,11 @@ mod tests {
 
         let expected = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["same", "a", "z"]),
+                csv::ByteRecord::from(vec!["same", "_", "_"]),
                 5,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["same", "b", "x"]),
+                csv::ByteRecord::from(vec!["same", "_", "_"]),
                 4,
             )),
         ]);
@@ -1108,15 +1108,15 @@ mod tests {
     ) -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["1", "b", "z"]),
+                csv::ByteRecord::from(vec!["1", "b", "_"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["1", "a", "z"]),
+                csv::ByteRecord::from(vec!["1", "a", "_"]),
                 4,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["0", "a", "z"]),
+                csv::ByteRecord::from(vec!["0", "a", "_"]),
                 4,
             )),
         ]);
@@ -1125,15 +1125,15 @@ mod tests {
 
         let expected = DiffByteRecords(vec![
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["0", "a", "z"]),
+                csv::ByteRecord::from(vec!["0", "a", "_"]),
                 4,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["1", "a", "z"]),
+                csv::ByteRecord::from(vec!["1", "a", "_"]),
                 4,
             )),
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["1", "b", "z"]),
+                csv::ByteRecord::from(vec!["1", "b", "_"]),
                 3,
             )),
         ]);
@@ -1434,11 +1434,11 @@ mod tests {
     ) -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "same", "c"]),
+                csv::ByteRecord::from(vec!["_", "same", "_"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "same", "y"]),
+                csv::ByteRecord::from(vec!["_", "same", "_"]),
                 4,
             )),
         ]);
@@ -1459,11 +1459,11 @@ mod tests {
     ) -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "a", "y"]),
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
                 4,
             )),
         ]);
@@ -1474,11 +1474,11 @@ mod tests {
 
         let expected = DiffByteRecords(vec![
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "a", "y"]),
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
                 4,
             )),
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
                 3,
             )),
         ]);
@@ -1493,11 +1493,11 @@ mod tests {
     ) -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "a", "y"]),
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
                 4,
             )),
         ]);
@@ -1509,11 +1509,11 @@ mod tests {
         // it is still sorted by the second column
         let expected = DiffByteRecords(vec![
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "a", "y"]),
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
                 4,
             )),
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
                 3,
             )),
         ]);
@@ -1528,11 +1528,11 @@ mod tests {
     ) -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
                 3,
             )),
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "a", "y"]),
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
                 4,
             )),
         ]);
@@ -1545,11 +1545,11 @@ mod tests {
         // but it is still sorted by the second column
         let expected = DiffByteRecords(vec![
             DiffByteRecord::Add(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "a", "y"]),
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
                 4,
             )),
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
-                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
                 3,
             )),
         ]);
