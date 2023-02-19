@@ -7,6 +7,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - None
 
+## 0.1.0-beta.2 (19. February, 2023)
+
+### Added
+- Add new method `sort_by_columns` on `DiffByteRecords` ([!21](https://gitlab.com/janriemer/csv-diff/-/merge_requests/21)).
+This method allows to sort the resulting diff by columns. _Thank you, [@jqnatividad](https://github.com/jqnatividad), for the idea!_
+
+#### Examples
+```rust
+let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new().build()?;
+let csv_left = "\
+                header1,header2,header3\n\
+                a,_,c\n\
+                c,_,_";
+let csv_right = "\
+                header1,header2,header3\n\
+                a,_,d\n\
+                b,_,_";
+let diff_res = csv_diff.diff(
+    Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
+    Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
+);
+
+let mut diff_res: DiffByteRecords = diff_res.try_into()?;
+
+diff_res.sort_by_columns(vec![0])?;
+
+let diff_rows_actual = diff_res.as_slice();
+
+let diff_rows_expected = vec![
+    DiffByteRecord::Modify {
+        delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "c"]), 2),
+        add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "d"]), 2),
+        field_indices: vec![2],
+    },
+    DiffByteRecord::Add(ByteRecordLineInfo::new(
+        csv::ByteRecord::from(vec!["b", "_", "_"]),
+        3,
+    )),
+    DiffByteRecord::Delete(ByteRecordLineInfo::new(
+        csv::ByteRecord::from(vec!["c", "_", "_"]),
+        3,
+    )),
+];
+
+assert_eq!(diff_rows_actual, diff_rows_expected.as_slice());
+```
+
+You can also sort by multiple columns (it will sort by the next column, if two records of the current column
+have compared as equal):
+```rust
+let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new().build()?;
+let csv_left = "\
+                header1,header2,header3\n\
+                a,10,c\n\
+                c,1,x";
+let csv_right = "\
+                header1,header2,header3\n\
+                a,10,d\n\
+                b,1,xx";
+let diff_res = csv_diff.diff(
+    Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
+    Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
+);
+
+let mut diff_res: DiffByteRecords = diff_res.try_into()?;
+
+diff_res.sort_by_columns(vec![1, 2])?;
+
+let diff_rows_actual = diff_res.as_slice();
+
+let diff_rows_expected = vec![
+    DiffByteRecord::Delete(ByteRecordLineInfo::new(
+        csv::ByteRecord::from(vec!["c", "1", "x"]),
+        3,
+    )),
+    DiffByteRecord::Add(ByteRecordLineInfo::new(
+        csv::ByteRecord::from(vec!["b", "1", "xx"]), // "xx" is larger than "x" (as in ASCII), therefore it is sorted this way
+        3,
+    )),
+    DiffByteRecord::Modify {
+        delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "10", "c"]), 2), // "10" is larger than "1" (as in ASCII), so the order has been determined without looking at the second index
+        add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "10", "d"]), 2),
+        field_indices: vec![2],
+    },
+];
+
+assert_eq!(diff_rows_actual, diff_rows_expected.as_slice());
+```
+
+- Add new enum `ColumnIdx`, which can be used in new method `sort_by_column` ([!21](https://gitlab.com/janriemer/csv-diff/-/merge_requests/21)):
+
+```rust
+// the following...
+diff_byte_records.sort_by_columns(vec![1])?;
+
+// ...can also be written as
+diff_byte_records.sort_by_columns(vec![ColumnIdx::IdxForBoth(1)])?;
+```
+Currently, this enum only has one variant (`IdxForBoth(usize)`), but we plan to extend it, so that you can later sort by header name, too (e.g. via `ColumnIdx::HeaderForBoth(AsRef<[u8]>`)).
+
+- Add new error enum `ColumnIdxError`, which is returned, when method `sort_by_column` tries to access a column that exceeds the number of columns in the CSV.
+
+### Changed
+- Lock dep `csv` to version ~1.1   
+Version 1.2 is not compatible with MSRV of 1.56
+- Add crate `xxhash-rust` to `Credits` in README (sorry for not mentioning it before - without it, this crate would not have been possible)
+
+### Fixed
+- None
+
 ## 0.1.0-beta.1 (7. January, 2023)
 
 ### Added
