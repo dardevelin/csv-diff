@@ -1410,6 +1410,58 @@ mod tests {
     }
 
     #[test]
+    fn sort_by_col_modify_cmp_with_add_cmp_with_modify_cmp_with_delete(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["b", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["b", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
     fn sort_by_col_idx_out_of_bounds_err() -> Result<(), Box<dyn Error>> {
         let mut diff_records = DiffByteRecords(vec![
             DiffByteRecord::Delete(ByteRecordLineInfo::new(
