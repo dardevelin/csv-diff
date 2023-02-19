@@ -91,11 +91,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Getting Started
 In your Cargo.toml file add the following lines under `[dependencies]`:
 ```toml
-csv-diff = "0.1.0-beta.0"
+csv-diff = "0.1.0-beta.2"
 ```
 This will use a rayon thread-pool, but you can opt-out of it and for example use threads without a thread-pool, by opting in into the `crossbeam-threads` feature (and opting-out of the default features):
 ```toml
-csv-diff = { version = "0.1.0-beta.0", default-features = false, features = ["crossbeam-threads"] }
+csv-diff = { version = "0.1.0-beta.2", default-features = false, features = ["crossbeam-threads"] }
 ```
 
 ## Use Case
@@ -135,6 +135,7 @@ Additionally, this crate would not exist without the awesome Rust community and 
 - [mown](https://docs.rs/mown/0.2.1/mown/)
 - [rayon][rayon]
 - [thiserror](https://docs.rs/thiserror/1.0.30/thiserror/)
+- [xxhash-rust](https://docs.rs/xxhash-rust/latest)
 
 
 <br>
