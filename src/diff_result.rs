@@ -108,7 +108,7 @@ impl DiffByteRecords {
                     .find_map(|col_idx| {
                         match (add_l, add_r)
                             .cmp_by_col(col_idx)
-                            .map(|ord| (!ord.is_eq()).then_some(ord))
+                            .map(|ord| (!ord.is_eq()).then(|| ord))
                         {
                             Ok(ord) => ord,
                             Err(e) => {
@@ -135,7 +135,7 @@ impl DiffByteRecords {
                             .and_then(|ord| match ord {
                                 Ordering::Equal => (left, mod_add)
                                     .cmp_by_col(col_idx)
-                                    .map(|ord| (!ord.is_eq()).then_some(ord)),
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
                                 _ => Ok(Some(ord)),
                             }) {
                             Ok(ord) => ord,
@@ -154,7 +154,7 @@ impl DiffByteRecords {
                     .find_map(|col_idx| {
                         match (add, del)
                             .cmp_by_col(col_idx)
-                            .map(|ord| (!ord.is_eq()).then_some(ord))
+                            .map(|ord| (!ord.is_eq()).then(|| ord))
                         {
                             Ok(ord) => ord,
                             Err(e) => {
@@ -182,7 +182,7 @@ impl DiffByteRecords {
                             .and_then(|ord| match ord {
                                 Ordering::Equal => (mod_add, add)
                                     .cmp_by_col(col_idx)
-                                    .map(|ord| (!ord.is_eq()).then_some(ord)),
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
                                 _ => Ok(Some(ord)),
                             }) {
                             Ok(ord) => ord,
@@ -215,7 +215,7 @@ impl DiffByteRecords {
                             .and_then(|ord| match ord {
                                 Ordering::Equal => (add_l, add_r)
                                     .cmp_by_col(col_idx)
-                                    .map(|ord| (!ord.is_eq()).then_some(ord)),
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
                                 _ => Ok(Some(ord)),
                             }) {
                             Ok(ord) => ord,
@@ -243,7 +243,7 @@ impl DiffByteRecords {
                             .and_then(|ord| match ord {
                                 Ordering::Equal => (mod_add, del)
                                     .cmp_by_col(col_idx)
-                                    .map(|ord| (!ord.is_eq()).then_some(ord)),
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
                                 _ => Ok(Some(ord)),
                             }) {
                             Ok(ord) => ord,
@@ -262,7 +262,7 @@ impl DiffByteRecords {
                     .find_map(|col_idx| {
                         match (del, add)
                             .cmp_by_col(col_idx)
-                            .map(|ord| (!ord.is_eq()).then_some(ord))
+                            .map(|ord| (!ord.is_eq()).then(|| ord))
                         {
                             Ok(ord) => ord,
                             Err(e) => {
@@ -290,7 +290,7 @@ impl DiffByteRecords {
                             .and_then(|ord| match ord {
                                 Ordering::Equal => (del, mod_add)
                                     .cmp_by_col(col_idx)
-                                    .map(|ord| (!ord.is_eq()).then_some(ord)),
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
                                 _ => Ok(Some(ord)),
                             }) {
                             Ok(ord) => ord,
@@ -309,7 +309,7 @@ impl DiffByteRecords {
                     .find_map(|col_idx| {
                         match (del_l, del_r)
                             .cmp_by_col(col_idx)
-                            .map(|ord| (!ord.is_eq()).then_some(ord))
+                            .map(|ord| (!ord.is_eq()).then(|| ord))
                         {
                             Ok(ord) => ord,
                             Err(e) => {
