@@ -135,6 +135,7 @@ Additionally, this crate would not exist without the awesome Rust community and 
 - [mown](https://docs.rs/mown/0.2.1/mown/)
 - [rayon][rayon]
 - [thiserror](https://docs.rs/thiserror/1.0.30/thiserror/)
+- [xxhash-rust](https://docs.rs/xxhash-rust/latest)
 
 
 <br>
