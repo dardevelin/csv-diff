@@ -264,6 +264,98 @@ mod integration_test {
         Ok(())
     }
 
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn local_diffbyterecords_sort_by_columns() -> Result<(), Box<dyn Error>> {
+        use csv_diff::diff_result::ColumnIdx;
+
+        let thread_pool = rayon::ThreadPoolBuilder::new().build()?;
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffLocalBuilder::new()
+            .rayon_thread_pool(&thread_pool)
+            .build()?;
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,_,c\n\
+                        c,_,_";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,_,d\n\
+                        b,_,_";
+        let mut diff_res = csv_diff.diff(
+            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
+        )?;
+
+        diff_res.sort_by_columns(vec![ColumnIdx::IdxForBoth(0)])?;
+
+        let diff_rows_actual = diff_res.as_slice();
+
+        let diff_rows_expected = vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "c"]), 2),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "d"]), 2),
+                field_indices: vec![2],
+            },
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["b", "_", "_"]),
+                3,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["c", "_", "_"]),
+                3,
+            )),
+        ];
+
+        assert_eq!(diff_rows_actual, diff_rows_expected.as_slice());
+
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon-threads")]
+    #[test]
+    fn streaming_collect_into_diffbyterecords_then_sort_by_columns() -> Result<(), Box<dyn Error>> {
+        use csv_diff::diff_result::{ColumnIdx, DiffByteRecords};
+
+        let csv_diff = csv_diff::csv_diff::CsvByteDiffBuilder::new().build()?;
+        let csv_left = "\
+                        header1,header2,header3\n\
+                        a,_,c\n\
+                        c,_,_";
+        let csv_right = "\
+                        header1,header2,header3\n\
+                        a,_,d\n\
+                        b,_,_";
+        let diff_res = csv_diff.diff(
+            Csv::with_reader_seek(Cursor::new(csv_left.as_bytes())),
+            Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
+        );
+
+        let mut diff_res: DiffByteRecords = diff_res.try_into()?;
+
+        diff_res.sort_by_columns(vec![ColumnIdx::IdxForBoth(0)])?;
+        let diff_rows_actual = diff_res.as_slice();
+
+        let diff_rows_expected = vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "c"]), 2),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "d"]), 2),
+                field_indices: vec![2],
+            },
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["b", "_", "_"]),
+                3,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["c", "_", "_"]),
+                3,
+            )),
+        ];
+
+        assert_eq!(diff_rows_actual, diff_rows_expected.as_slice());
+
+        Ok(())
+    }
+
     #[cfg(feature = "crossbeam-threads")]
     #[test]
     fn local_create_instance_with_builder_crossbeam_and_diff_with_cursor(
