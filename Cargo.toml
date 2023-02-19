@@ -1,6 +1,6 @@
 [package]
 name = "csv-diff"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 authors = ["Jan Riemer <janriemer@tutanota.de>"]
 description = "Compare two CSVs - with ludicrous speed 🚀."
 edition = "2021"
