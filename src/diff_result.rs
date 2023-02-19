@@ -10,6 +10,7 @@ use std::{
     collections::{hash_map::IntoIter, VecDeque},
     convert::{TryFrom, TryInto},
 };
+use thiserror::Error;
 
 /// Holds all information about the difference between two CSVs, after they have
 /// been compared with [`CsvByteDiffLocal.diff`](crate::csv_diff::CsvByteDiffLocal::diff).
@@ -92,6 +93,239 @@ impl DiffByteRecords {
         })
     }
 
+    // TODO: in the future, we might want to have something like Result<(), Vec<ColumnIdxError>> as a return value,
+    // so that we can report _all_ the errors that happened and not only the first one
+    pub fn sort_by_columns<E: Into<ColumnIdx>, I: IntoIterator<Item = E>>(
+        &mut self,
+        cols: I,
+    ) -> Result<(), ColumnIdxError> {
+        let cols_to_sort = cols.into_iter().map(|e| e.into()).collect::<Vec<_>>();
+        let mut error_maybe: Result<(), ColumnIdxError> = Ok(());
+        if !cols_to_sort.is_empty() {
+            self.0.sort_by(|a, b| match (a, b) {
+                (DiffByteRecord::Add(add_l), DiffByteRecord::Add(add_r)) => cols_to_sort
+                    .iter()
+                    .find_map(|col_idx| {
+                        match (add_l, add_r)
+                            .cmp_by_col(col_idx)
+                            .map(|ord| (!ord.is_eq()).then(|| ord))
+                        {
+                            Ok(ord) => ord,
+                            Err(e) => {
+                                if !error_maybe.is_err() {
+                                    error_maybe = Err(e);
+                                }
+                                None
+                            }
+                        }
+                    })
+                    .unwrap_or(Ordering::Equal),
+                (
+                    DiffByteRecord::Add(left),
+                    DiffByteRecord::Modify {
+                        delete: mod_del,
+                        add: mod_add,
+                        field_indices: _field_indices,
+                    },
+                ) => cols_to_sort
+                    .iter()
+                    .find_map(|col_idx| {
+                        match (left, mod_del)
+                            .cmp_by_col(col_idx)
+                            .and_then(|ord| match ord {
+                                Ordering::Equal => (left, mod_add)
+                                    .cmp_by_col(col_idx)
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
+                                _ => Ok(Some(ord)),
+                            }) {
+                            Ok(ord) => ord,
+                            Err(e) => {
+                                if !error_maybe.is_err() {
+                                    error_maybe = Err(e);
+                                }
+                                None
+                            }
+                        }
+                    })
+                    // `Add` should be treated as greater than `Modify`
+                    .unwrap_or(Ordering::Greater),
+                (DiffByteRecord::Add(add), DiffByteRecord::Delete(del)) => cols_to_sort
+                    .iter()
+                    .find_map(|col_idx| {
+                        match (add, del)
+                            .cmp_by_col(col_idx)
+                            .map(|ord| (!ord.is_eq()).then(|| ord))
+                        {
+                            Ok(ord) => ord,
+                            Err(e) => {
+                                if !error_maybe.is_err() {
+                                    error_maybe = Err(e);
+                                }
+                                None
+                            }
+                        }
+                    })
+                    // `Add` should be treated as greater than `Delete`
+                    .unwrap_or(Ordering::Greater),
+                (
+                    DiffByteRecord::Modify {
+                        delete: mod_del,
+                        add: mod_add,
+                        field_indices: _field_indices,
+                    },
+                    DiffByteRecord::Add(add),
+                ) => cols_to_sort
+                    .iter()
+                    .find_map(|col_idx| {
+                        match (mod_del, add)
+                            .cmp_by_col(col_idx)
+                            .and_then(|ord| match ord {
+                                Ordering::Equal => (mod_add, add)
+                                    .cmp_by_col(col_idx)
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
+                                _ => Ok(Some(ord)),
+                            }) {
+                            Ok(ord) => ord,
+                            Err(e) => {
+                                if !error_maybe.is_err() {
+                                    error_maybe = Err(e);
+                                }
+                                None
+                            }
+                        }
+                    })
+                    // `Modify` should be treated as less than `Add`
+                    .unwrap_or(Ordering::Less),
+                (
+                    DiffByteRecord::Modify {
+                        delete: delete_l,
+                        add: add_l,
+                        field_indices: _field_indices_l,
+                    },
+                    DiffByteRecord::Modify {
+                        delete: delete_r,
+                        add: add_r,
+                        field_indices: _field_indices_r,
+                    },
+                ) => cols_to_sort
+                    .iter()
+                    .find_map(|col_idx| {
+                        match (delete_l, delete_r)
+                            .cmp_by_col(col_idx)
+                            .and_then(|ord| match ord {
+                                Ordering::Equal => (add_l, add_r)
+                                    .cmp_by_col(col_idx)
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
+                                _ => Ok(Some(ord)),
+                            }) {
+                            Ok(ord) => ord,
+                            Err(e) => {
+                                if !error_maybe.is_err() {
+                                    error_maybe = Err(e);
+                                }
+                                None
+                            }
+                        }
+                    })
+                    .unwrap_or(Ordering::Equal),
+                (
+                    DiffByteRecord::Modify {
+                        delete: mod_del,
+                        add: mod_add,
+                        field_indices: _field_indices,
+                    },
+                    DiffByteRecord::Delete(del),
+                ) => cols_to_sort
+                    .iter()
+                    .find_map(|col_idx| {
+                        match (mod_del, del)
+                            .cmp_by_col(col_idx)
+                            .and_then(|ord| match ord {
+                                Ordering::Equal => (mod_add, del)
+                                    .cmp_by_col(col_idx)
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
+                                _ => Ok(Some(ord)),
+                            }) {
+                            Ok(ord) => ord,
+                            Err(e) => {
+                                if !error_maybe.is_err() {
+                                    error_maybe = Err(e);
+                                }
+                                None
+                            }
+                        }
+                    })
+                    // `Modify` should be treated as greater than `Delete`
+                    .unwrap_or(Ordering::Greater),
+                (DiffByteRecord::Delete(del), DiffByteRecord::Add(add)) => cols_to_sort
+                    .iter()
+                    .find_map(|col_idx| {
+                        match (del, add)
+                            .cmp_by_col(col_idx)
+                            .map(|ord| (!ord.is_eq()).then(|| ord))
+                        {
+                            Ok(ord) => ord,
+                            Err(e) => {
+                                if !error_maybe.is_err() {
+                                    error_maybe = Err(e);
+                                }
+                                None
+                            }
+                        }
+                    })
+                    // `Delete` should be treated as less than `Add`
+                    .unwrap_or(Ordering::Less),
+                (
+                    DiffByteRecord::Delete(del),
+                    DiffByteRecord::Modify {
+                        delete: mod_del,
+                        add: mod_add,
+                        field_indices: _field_indices,
+                    },
+                ) => cols_to_sort
+                    .iter()
+                    .find_map(|col_idx| {
+                        match (del, mod_del)
+                            .cmp_by_col(col_idx)
+                            .and_then(|ord| match ord {
+                                Ordering::Equal => (del, mod_add)
+                                    .cmp_by_col(col_idx)
+                                    .map(|ord| (!ord.is_eq()).then(|| ord)),
+                                _ => Ok(Some(ord)),
+                            }) {
+                            Ok(ord) => ord,
+                            Err(e) => {
+                                if !error_maybe.is_err() {
+                                    error_maybe = Err(e);
+                                }
+                                None
+                            }
+                        }
+                    })
+                    // `Delete` should be treated as less than `Modify`
+                    .unwrap_or(Ordering::Less),
+                (DiffByteRecord::Delete(del_l), DiffByteRecord::Delete(del_r)) => cols_to_sort
+                    .iter()
+                    .find_map(|col_idx| {
+                        match (del_l, del_r)
+                            .cmp_by_col(col_idx)
+                            .map(|ord| (!ord.is_eq()).then(|| ord))
+                        {
+                            Ok(ord) => ord,
+                            Err(e) => {
+                                if !error_maybe.is_err() {
+                                    error_maybe = Err(e);
+                                }
+                                None
+                            }
+                        }
+                    })
+                    .unwrap_or(Ordering::Equal),
+            });
+        }
+        error_maybe
+    }
+
     /// Return the `DiffByteRecord`s as a single slice.
     /// # Example
     #[cfg_attr(
@@ -135,6 +369,77 @@ impl DiffByteRecords {
     pub fn iter(&self) -> core::slice::Iter<'_, DiffByteRecord> {
         self.0.iter()
     }
+}
+
+trait CmpByColumn {
+    fn cmp_by_col(&self, col_idx: &ColumnIdx) -> Result<Ordering, ColumnIdxError>;
+}
+
+impl CmpByColumn for (&ByteRecordLineInfo, &ByteRecordLineInfo) {
+    #[inline]
+    fn cmp_by_col(&self, col_idx: &ColumnIdx) -> Result<Ordering, ColumnIdxError> {
+        let idx_for_both = col_idx
+            .idx_for_both()
+            .expect("idx, because it is the only enum variant");
+        let &(brli_left, brli_right) = self;
+        brli_left
+            .byte_record()
+            .get(idx_for_both)
+            .zip(brli_right.byte_record().get(idx_for_both))
+            .map(|(a, b)| a.cmp(b))
+            .ok_or(ColumnIdxError::IdxOutOfBounds {
+                idx: idx_for_both,
+                len: brli_left.byte_record().len(),
+            })
+    }
+}
+
+pub enum ColumnIdx {
+    IdxForBoth(usize),
+    // TODO: we will implement this later - right now it will be too complicated
+    // TODO: instead of String, we should use `AsRef<[u8]>`
+    // HeaderForBoth(String),
+    // HeaderLeftIdxRight(String, usize),
+    // HeaderLeftHeaderRight(String, String),
+    // IdxLeftHeaderRight(usize, String),
+    // IdxLeftIdxRight(usize, usize),
+}
+
+impl ColumnIdx {
+    #[inline]
+    fn idx_for_both(&self) -> Option<usize> {
+        match self {
+            &Self::IdxForBoth(idx) => Some(idx),
+        }
+    }
+}
+
+// TODO: we will implement this later - right now it will be too complicated
+// impl From<String> for ColumnIdx {
+//     fn from(value: String) -> Self {
+//         Self::Header(value)
+//     }
+// }
+
+// impl From<&str> for ColumnIdx {
+//     fn from(value: &str) -> Self {
+//         Self::Header(value.into())
+//     }
+// }
+
+impl From<usize> for ColumnIdx {
+    fn from(value: usize) -> Self {
+        Self::IdxForBoth(value)
+    }
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum ColumnIdxError {
+    // TODO: we will implement this later - right now it will be too complicated
+    // #[error(r#"the header name "{0}" does not exist"#)]
+    // NoSuchHeaderName(AsRef<[u8]>),
+    #[error("the column index `{idx}` exceeds the total number of columns ({len})")]
+    IdxOutOfBounds { idx: usize, len: usize },
 }
 
 impl IntoIterator for DiffByteRecords {
@@ -548,5 +853,761 @@ impl TryFrom<DiffByteRecordsIterator> for DiffByteRecords {
 
     fn try_from(value: DiffByteRecordsIterator) -> Result<Self, Self::Error> {
         Ok(DiffByteRecords(value.collect::<csv::Result<_>>()?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        diff_result::{ColumnIdx, ColumnIdxError},
+        diff_row::{ByteRecordLineInfo, DiffByteRecord},
+    };
+    use pretty_assertions::assert_eq;
+    use std::error::Error;
+
+    use super::DiffByteRecords;
+
+    #[test]
+    fn sort_by_col_selection_of_cols_is_empty_order_does_not_change() -> Result<(), Box<dyn Error>>
+    {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["d", "e", "f"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                4,
+            )),
+        ]);
+
+        let expected = diff_records.clone();
+
+        diff_records.sort_by_columns::<ColumnIdx, _>(vec![])?;
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_all_equal_delete_before_add_order_does_not_change() -> Result<(), Box<dyn Error>>
+    {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "x", "y"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                4,
+            )),
+        ]);
+
+        let expected = diff_records.clone();
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_second_col_a_in_add_is_less_than_b_in_modify_delete() -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![1])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
+                3,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_certain_col_idx_twice_is_ok() -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["az", "_", "_"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0, 0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["az", "_", "_"]),
+                3,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_first_and_second_col_first_col_val_is_equal_so_second_col_decides_order(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["x", "b", "_"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["x", "a", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0, 1])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["x", "a", "_"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["x", "b", "_"]),
+                3,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_first_second_and_third_col_first_and_second_col_val_is_equal_so_third_col_decides_order(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["x", "a", "z"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["x", "a", "i"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0, 1, 2])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["x", "a", "i"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["x", "a", "z"]),
+                3,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_first_second_and_third_col_back_to_front_third_and_second_col_val_is_equal_so_first_col_decides_order(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["2", "a", "z"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["1", "a", "z"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![2, 1, 0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["1", "a", "z"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["2", "a", "z"]),
+                3,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_delete_must_be_smaller_than_add_when_otherwise_identical(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["same", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["same", "_", "_"]),
+                5,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["same", "_", "_"]),
+                5,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["same", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_with_three_items_first_and_second_by_first_col_second_and_third_by_second_col(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["1", "b", "_"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["1", "a", "_"]),
+                4,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["0", "a", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0, 1])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["0", "a", "_"]),
+                4,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["1", "a", "_"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["1", "b", "_"]),
+                3,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_delete_compared_with_modify_delete() -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["b", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = diff_records.clone();
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_delete_compared_with_modify_delete_are_equal_fall_back_to_compare_with_modify_add(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["c", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = diff_records.clone();
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_delete_must_be_smaller_than_modify_when_otherwise_identical(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["c", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["c", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_modify_delete_compared_with_add() -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["b", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = diff_records.clone();
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_add_compared_with_modify_delete() -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["b", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["b", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_modify_delete_compared_with_add_are_equal_fall_back_to_compare_with_modify_add(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_add_must_be_greater_than_modify_when_otherwise_identical(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["c", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = diff_records.clone();
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_modify_delete_compared_with_modify_delete() -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["b", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["b", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["d", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_modify_delete_compared_with_modify_delete_are_equal_fall_back_to_compare_modify_add_with_modify_add(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["b", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["b", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_modify_cmp_with_add_cmp_with_modify_cmp_with_delete(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["b", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+        ]);
+
+        diff_records.sort_by_columns(vec![0])?;
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "_", "_"]),
+                4,
+            )),
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+            DiffByteRecord::Modify {
+                delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["c", "_", "_"]), 1),
+                add: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["b", "_", "_"]), 2),
+                field_indices: vec![],
+            },
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_idx_out_of_bounds_err() -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "b", "c"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["a", "x", "y"]),
+                4,
+            )),
+        ]);
+
+        let res = diff_records.sort_by_columns(vec![3]);
+
+        assert_eq!(res, Err(ColumnIdxError::IdxOutOfBounds { idx: 3, len: 3 }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_first_idx_ok_and_cmp_as_equal_second_idx_out_of_bounds_err_order_stays_the_same(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "same", "_"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "same", "_"]),
+                4,
+            )),
+        ]);
+
+        let res = diff_records.sort_by_columns(vec![1, 3]);
+
+        assert_eq!(res, Err(ColumnIdxError::IdxOutOfBounds { idx: 3, len: 3 }));
+
+        let expected = diff_records.clone();
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_first_idx_ok_and_cmp_not_equal_second_idx_out_of_bounds_but_no_err_because_first_idx_already_sorted(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
+                4,
+            )),
+        ]);
+
+        let res = diff_records.sort_by_columns(vec![1, 3]);
+
+        assert_eq!(res, Ok(()));
+
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
+                3,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_first_idx_out_of_bounds_err_second_idx_ok_sort_by_second_idx(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
+                4,
+            )),
+        ]);
+
+        let res = diff_records.sort_by_columns(vec![3, 1]);
+
+        assert_eq!(res, Err(ColumnIdxError::IdxOutOfBounds { idx: 3, len: 3 }));
+
+        // it is still sorted by the second column
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
+                3,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort_by_col_first_idx_out_of_bounds_err_second_idx_ok_third_idx_out_of_bounds_sort_by_second_idx(
+    ) -> Result<(), Box<dyn Error>> {
+        let mut diff_records = DiffByteRecords(vec![
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
+                3,
+            )),
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
+                4,
+            )),
+        ]);
+
+        let res = diff_records.sort_by_columns(vec![3, 1, 4]);
+
+        // we only get the first error that is encountered during the sort
+        assert_eq!(res, Err(ColumnIdxError::IdxOutOfBounds { idx: 3, len: 3 }));
+
+        // but it is still sorted by the second column
+        let expected = DiffByteRecords(vec![
+            DiffByteRecord::Add(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "a", "_"]),
+                4,
+            )),
+            DiffByteRecord::Delete(ByteRecordLineInfo::new(
+                csv::ByteRecord::from(vec!["_", "b", "_"]),
+                3,
+            )),
+        ]);
+
+        assert_eq!(diff_records, expected);
+
+        Ok(())
     }
 }
