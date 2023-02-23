@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - None
 
+## 0.1.0-beta.3 (23. February, 2023)
+
+### Changed
+- __Breaking:__ Remove `TryFrom<DiffByteRecordsIterator>` impl on `DiffByteRecords` and instead
+provide a method `try_to_diff_byte_records`: The reason is, that this conversion effectively `collect`s
+the iterator and is therefore not a cheap conversion (as the previous `try_from` implied) ([2296131](https://gitlab.com/janriemer/csv-diff/-/commit/3a57681697ccb86b804c11af316318c71d434fae)).
+
 ## 0.1.0-beta.2 (19. February, 2023)
 
 ### Added
