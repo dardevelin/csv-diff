@@ -330,7 +330,7 @@ mod integration_test {
             Csv::with_reader_seek(Cursor::new(csv_right.as_bytes())),
         );
 
-        let mut diff_res: DiffByteRecords = diff_res.try_into()?;
+        let mut diff_res: DiffByteRecords = diff_res.try_to_diff_byte_records()?;
 
         diff_res.sort_by_columns(vec![ColumnIdx::IdxForBoth(0)])?;
         let diff_rows_actual = diff_res.as_slice();
@@ -479,7 +479,7 @@ mod integration_test {
             Csv::with_reader(csv_right.as_bytes()),
         );
 
-        let diff_byte_records_actual: DiffByteRecords = diff_res.try_into()?;
+        let diff_byte_records_actual: DiffByteRecords = diff_res.try_to_diff_byte_records()?;
 
         let diff_rows_expected = vec![DiffByteRecord::Modify {
             delete: ByteRecordLineInfo::new(csv::ByteRecord::from(vec!["a", "b", "c"]), 2),

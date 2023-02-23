@@ -179,7 +179,7 @@ let mut diff_byte_records: DiffByteRecords = csv_byte_diff
         Csv::with_reader(csv_data_left.as_bytes()),
         Csv::with_reader(csv_data_right.as_bytes()),
     )
-    .try_into()?;
+    .try_to_diff_byte_records()?;
 
 let diff_byte_rows = diff_byte_records.as_slice();
 
