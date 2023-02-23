@@ -531,6 +531,10 @@ impl DiffByteRecordsIterator {
             sender_csv_records_recycle,
         }
     }
+
+    pub fn try_to_diff_byte_records(self) -> csv::Result<DiffByteRecords> {
+        Ok(DiffByteRecords(self.collect::<csv::Result<_>>()?))
+    }
 }
 
 impl Iterator for DiffByteRecordsIterator {
@@ -845,14 +849,6 @@ impl Iterator for DiffByteRecordsIterator {
             _ => (),
         }
         None
-    }
-}
-
-impl TryFrom<DiffByteRecordsIterator> for DiffByteRecords {
-    type Error = csv::Error;
-
-    fn try_from(value: DiffByteRecordsIterator) -> Result<Self, Self::Error> {
-        Ok(DiffByteRecords(value.collect::<csv::Result<_>>()?))
     }
 }
 
