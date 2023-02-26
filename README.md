@@ -91,11 +91,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Getting Started
 In your Cargo.toml file add the following lines under `[dependencies]`:
 ```toml
-csv-diff = "0.1.0-beta.3"
+csv-diff = "0.1.0-beta.4"
 ```
 This will use a rayon thread-pool, but you can opt-out of it and for example use threads without a thread-pool, by opting in into the `crossbeam-threads` feature (and opting-out of the default features):
 ```toml
-csv-diff = { version = "0.1.0-beta.3", default-features = false, features = ["crossbeam-threads"] }
+csv-diff = { version = "0.1.0-beta.4", default-features = false, features = ["crossbeam-threads"] }
 ```
 
 ## Use Case

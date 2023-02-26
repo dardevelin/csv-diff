@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - None
 
+## 0.1.0-beta.4 (26. February, 2023)
+
+### Changed
+- Change MSRV to 1.63. This is in preparation to using scoped threads from std instead of from `crossbeam-utils` ([!24](https://gitlab.com/janriemer/csv-diff/-/merge_requests/24)).
+- Bump dep `csv` to 1.2 - note that it is not locked behind `~` anymore, because this has caused build problems
+in `qsv` (`qsv` requires `csv` v1.2)([!24](https://gitlab.com/janriemer/csv-diff/-/merge_requests/24)).
+
 ## 0.1.0-beta.3 (23. February, 2023)
 
 ### Changed
