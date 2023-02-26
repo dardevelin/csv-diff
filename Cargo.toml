@@ -16,7 +16,7 @@ categories = ["encoding", "parser-implementations"]
 maintenance = { status = "experimental" }
 
 [dependencies]
-csv = "~1.1"
+csv = "1.2"
 rayon = { version = "1.5", optional = true }
 ahash = "0.8.0"
 xxhash-rust = {version = "0.8.3", features = ["xxh3"]}

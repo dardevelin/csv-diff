@@ -122,7 +122,7 @@ cargo bench
 This crate is implemented in __100% Safe Rust__, which is ensured by using `#![forbid(unsafe_code)]`.
 
 ## MSRV
-The Minimum Supported Rust Version for this crate is __1.56__. An increase of MSRV will be indicated by a minor change (according to SemVer).
+The Minimum Supported Rust Version for this crate is __1.63__. An increase of MSRV will be indicated by a minor change (according to SemVer).
 
 ## Credits
 This crate is inspired by the CLI tool [csvdiff](https://github.com/aswinkarthik/csvdiff) by Aswin Karthik, which is written in Go. Definitely check it out. It is a great tool.
