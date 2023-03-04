@@ -1,4 +1,5 @@
 <h1 style="text-align: center;">csv-diff</h1>
+Notice This crate was not created by me, You can find the original repo here: <a href="https://gitlab.com/janriemer/csv-diff">https://gitlab.com/janriemer/csv-diff</a>
 
 <h3 style="text-align: center;">
 	Find the difference between two CSVs - with ludicrous speed!🚀
